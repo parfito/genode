@@ -324,7 +324,8 @@ unsigned long long Platform_thread::execution_time() const
 
 	uint8_t res = Nova::sc_ctrl(_sel_sc(), time);
 	if (res != Nova::NOVA_OK)
-		PDBG("sc_ctrl failed res=%x", res);
+		PDBG("sc_ctrl failed res=%x'%s':'%s'", 
+                        res, _pd ? _pd->name() : "unknown", _name.string());
 
 	return time;
 }
