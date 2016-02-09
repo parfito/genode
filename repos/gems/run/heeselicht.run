@@ -1,44 +1,48 @@
-
 set build_components {
-	core init virtualbox
-	server/part_blk
-	server/rump_fs
-	drivers/ahci
-	drivers/framebuffer/intel
-	drivers/timer
-	server/input_merger
-	drivers/nic
-	server/nitpicker
+	app/acpica
+	app/avplay
+	app/backdrop
+	app/cli_monitor
+	app/cpu_load_display
+	app/pointer
+	app/themed_decorator
+	app/trace_subject_reporter
 	app/vbox_pointer
-	server/nit_fb
-	server/report_rom
-	drivers/input
-	drivers/usb
+	app/xray_trigger
+	core
 	drivers/acpi
+	drivers/ahci
+	drivers/audio
+	drivers/framebuffer/intel
+	drivers/input
+	drivers/nic
 	drivers/platform
 	drivers/rtc
+	drivers/timer
+	drivers/usb
 	drivers/wifi
-	drivers/audio
-	server/wm app/decorator app/floating_window_layouter
-	noux/minimal lib/libc_noux
-	server/terminal server/ram_fs
-	test/libports/ncurses
-	app/cli_monitor
-	app/pointer
-	app/trace_subject_reporter
-	app/cpu_load_display
-	app/xray_trigger
-	server/file_terminal
-	server/terminal_log
-	server/fs_rom
-	server/rom_filter
-	server/mixer
+	init
 	lib/vfs/jitterentropy
-	app/backdrop
-	app/themed_decorator
+	noux/minimal lib/libc_noux
+	server/file_terminal
+	server/fs_rom
+	server/input_merger
+	server/mixer
+	server/nit_fb
+	server/nitpicker
+	server/part_blk
+	server/report_rom
+	server/rom_filter
+	server/rump_fs
+	server/terminal_log
+	server/terminal server/ram_fs
+	server/wm app/decorator app/floating_window_layouter
+	test/libports/ncurses
+	virtualbox
 }
 
-foreach pkg {bash coreutils vim} {
+set noux_pkgs { bash coreutils vim grep findutils }
+foreach pkg $noux_pkgs {
 	lappend_if [expr ![file exists bin/$pkg]] build_components noux-pkg/$pkg }
 
 build $build_components
@@ -56,11 +60,9 @@ set viminfo=}
 close $vimrc_fd
 
 # strip all binaries prior archiving
-exec sh -c "find bin/bash/ bin/vim/ bin/coreutils/ -type f | (xargs [cross_dev_prefix]strip || true) 2>/dev/null"
-
-exec tar cfv bin/bash.tar      -h -C bin/bash .
-exec tar cfv bin/coreutils.tar -h -C bin/coreutils .
-exec tar cfv bin/vim.tar       -h -C bin/vim .
+foreach pkg $noux_pkgs {
+	exec sh -c "find bin/$pkg/ -type f | (xargs [cross_dev_prefix]strip || true) 2>/dev/null"
+	exec tar cfv bin/$pkg.tar -h -C bin/$pkg .  }
 
 create_boot_directory
 
@@ -72,12 +74,10 @@ set config {
 		<service name="IRQ"/>
 		<service name="IO_MEM"/>
 		<service name="IO_PORT"/>
-		<service name="CAP"/>
 		<service name="PD"/>
 		<service name="RM"/>
 		<service name="CPU"/>
 		<service name="LOG"/>
-		<service name="SIGNAL"/>
 		<service name="TRACE"/>
 	</parent-provides>
 	<default-route>
@@ -107,20 +107,21 @@ set config {
 			<service name="Report" />
 		</provides>
 		<config>
-			<rom> <policy label="platform_drv -> acpi" report="acpi_drv -> acpi"/> </rom>
+			<policy label="platform_drv -> acpi" report="acpi_drv -> acpi"/>
 		</config>
 		<route>
 			<service name="LOG"> <parent/> </service>
-			<service name="SIGNAL"> <parent/> </service>
-			<service name="CAP"> <parent/> </service>
 			<service name="RM"> <parent/> </service>
 		</route>
 	</start>
 
 	<start name="platform_drv" priority="0">
-		<resource name="RAM" quantum="3M" constrain_phys="yes"/>
-		<provides> <service name="Platform"/> </provides>
-		<config>
+		<resource name="RAM" quantum="6M" constrain_phys="yes"/>
+		<provides>
+			<service name="Acpi"/>
+			<service name="Platform"/>
+		</provides>
+		<config system="yes">
 			<policy label="ps2_drv">  <device name="PS2"/> </policy>
 			<policy label="nic_drv">  <pci class="ETHERNET"/> </policy>
 			<policy label="fb_drv">   <pci class="VGA"/> </policy>
@@ -133,9 +134,13 @@ set config {
 				<pci bus="0" device="0" function="0"/>
 				<pci class="ISABRIDGE"/>
 			</policy>
+			<policy label="acpica">
+				<pci class="ALL"/>
+			</policy>
 		</config>
 		<route>
 			<service name="ROM" label="acpi"> <child name="acpi_report_rom"/> </service>
+			<service name="ROM" label="system"> <child name="config_rom"/> </service>
 			<any-service> <parent/> </any-service>
 		</route>
 	</start>
@@ -145,7 +150,7 @@ set config {
 		<resource name="RAM" quantum="10M" />
 		<provides><service name="Block" /></provides>
 		<config>
-			<policy label="part_blk" device="0" />
+			<policy label="cli_monitor -> linux -> vbox -> sda" device="0"/>
 		</config>
 		<route>
 			<any-service> <parent /> <any-child /></any-service>
@@ -156,11 +161,10 @@ set config {
 		<resource name="RAM" quantum="10M" />
 		<provides><service name="Block" /></provides>
 		<route>
-			<any-service><child name="ahci_drv"/> <parent/><any-child/></any-service>
+			<any-service><child name="usb_drv"/> <parent/><any-child/></any-service>
 		</route>
 		<config>
 			<policy label="rump_fs" partition="1"/>
-			<policy label="cli_monitor -> linux -> vbox -> home" partition="2"/>
 		</config>
 	</start>
 
@@ -198,10 +202,9 @@ set config {
 		<config ld_verbose="yes" fs="ext2fs">
 			<rump quota="8M"/>
 			<policy label="cli_monitor" root="/subsystems" writeable="no"/>
-			<policy label_prefix="cli_monitor -> noux" root="/" writeable="yes"/>
+			<policy label_prefix="cli_monitor -> noux" label_suffix="system" root="/" writeable="yes"/>
+			<policy label_prefix="cli_monitor -> noux" label_suffix="home" root="/home" writeable="yes"/>
 			<policy label="cli_monitor -> linux -> vbox -> rump_fs" root="/" writeable="yes"/>
-			<policy label="cli_monitor -> xubuntu_iso -> vbox -> rump_fs" root="/" writeable="yes"/>
-			<policy label="cli_monitor -> win7 -> vbox -> rump_fs" root="/" writeable="yes"/>
 			<policy label="rom" root="/genode" writeable="no"/>
 		</config>
 		<route>
@@ -246,13 +249,15 @@ set config {
 	</start>
 
 	<start name="usb_drv" priority="-1">
-		<resource name="RAM" quantum="8M"/>
+		<resource name="RAM" quantum="16M"/>
 		<provides>
 			<service name="Input"/>
+			<service name="Block" />
 			<service name="Usb" />
 		</provides>
 		<config uhci="yes" ehci="yes" xhci="yes">
 			<hid/>
+			<storage/>
 			<raw>
 				<report devices="yes"/>
 			</raw>
@@ -273,7 +278,7 @@ set config {
 
 	<!-- use high priority because periodic sync signals are used as time source -->
 	<start name="intel_fb_drv" priority="0">
-		<resource name="RAM" quantum="20M"/>
+		<resource name="RAM" quantum="32M"/>
 		<provides><service name="Framebuffer"/></provides>
 		<configfile name="fb_drv.config"/>
 		<route>
@@ -307,7 +312,9 @@ set config {
 		<resource name="RAM" quantum="8M"/>
 		<provides>
 			<service name="Audio_out"/>
+			<service name="Audio_in"/>
 		</provides>
+		<config/>
 	</start>
 
 	<start name="trace_subject_reporter" priority="-1">
@@ -341,25 +348,35 @@ set config {
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
-			<rom>
-				<policy label="vbox_pointer -> hover"      report="nitpicker -> hover"/>
-				<policy label="vbox_pointer -> xray"       report="xray_trigger -> xray"/>
-				<policy label="vbox_pointer -> shape"      report="cli_monitor -> linux -> vbox -> shape"/>
-				<policy label="vbox_pointer -> win7_shape" report="cli_monitor -> win7 -> vbox -> shape"/>
-				<policy label="xray_trigger -> hover"      report="nitpicker -> hover"/>
-				<policy label="decorator_config -> xray"   report="xray_trigger -> xray"/>
-				<policy label="nitpicker_config -> xray"   report="xray_trigger -> xray"/>
-				<policy label="cli_monitor -> noux -> noux -> wlan_accesspoints"
-				        report="wifi_drv -> wlan_accesspoints"/>
-				<policy label="cli_monitor -> noux -> noux -> wlan_state"
-				        report="wifi_drv -> wlan_state"/>
-				<policy label="cli_monitor -> noux -> noux -> trace_subjects"
-				        report="trace_subject_reporter -> trace_subjects"/>
-				<policy label="cli_monitor -> noux -> noux -> connectors"
-				        report="intel_fb_drv -> connectors"/>
-				<policy label="cli_monitor -> cpu_load_display -> trace_subjects"
-				        report="trace_subject_reporter -> trace_subjects"/>
-			</rom>
+			<policy label="vbox_pointer -> hover"      report="nitpicker -> hover"/>
+			<policy label="vbox_pointer -> xray"       report="xray_trigger -> xray"/>
+			<policy label="vbox_pointer -> shape"      report="cli_monitor -> linux -> vbox -> shape"/>
+			<policy label="vbox_pointer -> win7_shape" report="cli_monitor -> win7 -> vbox -> shape"/>
+			<policy label="xray_trigger -> hover"      report="nitpicker -> hover"/>
+			<policy label="decorator_config -> xray"   report="xray_trigger -> xray"/>
+			<policy label="nitpicker_config -> xray"   report="xray_trigger -> xray"/>
+			<policy label="cli_monitor -> noux -> noux -> wlan_accesspoints"
+			        report="wifi_drv -> wlan_accesspoints"/>
+			<policy label="cli_monitor -> noux -> noux -> wlan_state"
+			        report="wifi_drv -> wlan_state"/>
+			<policy label="cli_monitor -> noux -> noux -> trace_subjects"
+			        report="trace_subject_reporter -> trace_subjects"/>
+			<policy label="cli_monitor -> noux -> noux -> connectors"
+			        report="intel_fb_drv -> connectors"/>
+			<policy label="cli_monitor -> cpu_load_display -> trace_subjects"
+			        report="trace_subject_reporter -> trace_subjects"/>
+			<policy label_prefix="cli_monitor" label_suffix="channel_list"
+			        report="mixer -> channel_list"/>
+			<policy label="cli_monitor -> noux -> noux -> acpi_ac"
+			        report="acpica -> acpi_ac"/>
+			<policy label="cli_monitor -> noux -> noux -> acpi_battery"
+			        report="acpica -> acpi_battery"/>
+			<policy label="cli_monitor -> noux -> noux -> acpi_ec"
+			        report="acpica -> acpi_ec"/>
+			<policy label="cli_monitor -> noux -> noux -> acpi_fixed"
+			        report="acpica -> acpi_fixed"/>
+			<policy label="cli_monitor -> noux -> noux -> acpi_lid"
+			        report="acpica -> acpi_lid"/>
 		</config>
 	</start>
 
@@ -379,7 +396,7 @@ set config {
 	</start>
 
 	<start name="backdrop" priority="-1">
-		<resource name="RAM" quantum="12M"/>
+		<resource name="RAM" quantum="32M"/>
 		<configfile name="backdrop.config"/>
 		<route>
 			<service name="Nitpicker"> <child name="nitpicker"/> </service>
@@ -405,6 +422,8 @@ set config {
 				<policy label="wm -> resize_request"                    report="layouter -> resize_request"/>
 				<policy label="decorator -> decorator -> pointer"       report="wm -> pointer"/>
 				<policy label="layouter -> hover"                       report="decorator -> decorator -> hover"/>
+				<policy label="layouter -> decorator_margins"
+					report="decorator -> decorator -> decorator_margins"/>
 				<policy label="wm -> focus"                             report="layouter -> focus"/>
 			</rom>
 		</config>
@@ -434,6 +453,23 @@ set config {
 				<child name="wm"/> <child name="wm_report_rom"/> <parent/> <any-child/>
 			</any-service>
 		</route>
+		<config>
+			<press key="KEY_LEFTALT">
+				<press key="KEY_TAB" action="next_window">
+					<release key="KEY_TAB">
+						<release key="KEY_LEFTALT" action="raise_window"/>
+					</release>
+				</press>
+				<press key="KEY_LEFTSHIFT">
+					<press key="KEY_TAB" action="prev_window">
+						<release key="KEY_TAB">
+							<release key="KEY_LEFTALT" action="raise_window"/>
+						</release>
+					</press>
+				</press>
+				<press key="KEY_ENTER" action="toggle_fullscreen"/>
+			</press>
+		</config>
 	</start>
 
 	<!-- dynamically generates the decorator config depending on xray mode -->
@@ -485,7 +521,7 @@ set config {
 	</start>
 
 	<start name="vbox_pointer" priority="-1">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="2M"/>
 		<config>
 			<policy label="wm -> cli_monitor -> linux -> nit_fb" rom="shape"/>
 			<policy label="wm -> cli_monitor -> win7 -> nit_fb"  rom="win7_shape"/>
@@ -499,16 +535,18 @@ set config {
 
 	<start name="shared_fs" priority="-1">
 		<binary name="ram_fs"/>
-		<resource name="RAM" quantum="64M"/>
+		<resource name="RAM" quantum="256M"/>
 		<provides><service name="File_system"/></provides>
 		<config>
 			<content>
+				<dir name="media"/>
 				<dir name="tmp">
 					<rom name="init" as="blubb" />
 				</dir>
 			</content>
 			<policy label="noux -> shared" root="/" writeable="yes" />
 			<policy label_prefix="cli_monitor -> noux" root="/" writeable="yes" />
+			<policy label_prefix="cli_monitor -> media_player" root="/media" writeable="no" />
 			<policy label="cli_monitor -> linux -> vbox -> shared" root="/" writeable="yes" />
 			<policy label="log_file_terminal" root="/" writeable="yes" />
 			<policy label="nitpicker" root="/" writeable="yes" />
@@ -521,6 +559,10 @@ set config {
 		<provides> <service name="File_system"/> </provides>
 		<config>
 			<content>
+				<inline name="system">
+<system state="normal"/>
+<!-- state="reset" and state="poweroff" are supported values -->
+				</inline>
 				<inline name="wlan_configuration">
 <selected_accesspoint ssid="Turmvilla"/>
 				</inline>
@@ -582,8 +624,9 @@ set config {
 			<policy label="wm -> cli_monitor -> linux" domain="linux"/>
 			<policy label="wm -> cli_monitor -> noux"  domain="noux"/>
 			<policy label="backdrop"                   domain="background"/>
-			<policy                                    domain="default"/>
+			<default-policy                            domain="default"/>
 
+			<global-key name="KEY_LEFTALT"    label="wm -> decorator" />
 			<global-key name="KEY_SCROLLLOCK" label="xray_trigger" />
 			<global-key name="KEY_F12"        label="xray_trigger" />
 		</inline>
@@ -591,22 +634,20 @@ set config {
 </config>
 				</inline>
 
-				<inline name="backdrop.config">
-<config>
+				<inline name="backdrop.config"><config>
 	<libc>
 		<vfs>
-			<rom name="genode_logo.png"/>
+			<rom name="heeselicht_logo.png"/>
 			<rom name="grid.png"/>
-			<rom name="sticks_blue.png"/>
+			<rom name="heeselight.png"/>
 		</vfs>
 	</libc>
-	<fill color="#14182d" />
-	<image png="sticks_blue.png" scale="zoom" anchor="bottom_left" alpha="200" />
-	<image png="grid.png"        tiled="yes" alpha="180" />
-	<image png="genode_logo.png" anchor="bottom_right" alpha="150"
-	                             xpos="-20" ypos="-20" />
-</config>
-				</inline>
+	<fill color="#141424" />
+	<image png="heeselight.png" alpha="100" anchor="bottom_right" xpos="30" ypos="10"/>
+	<image png="grid.png"        tiled="yes" alpha="100" />
+	<image png="heeselicht_logo.png" anchor="bottom_right" alpha="100"
+	                             xpos="-20" ypos="-35" />
+</config></inline>
 
 				<inline name="decorator.config">
 <config>
@@ -645,10 +686,8 @@ set config {
 	<parent-provides>
 		<service name="ROM"/>
 		<service name="RAM"/>
-		<service name="CAP"/>
 		<service name="RM"/>
 		<service name="LOG"/>
-		<service name="SIGNAL"/>
 		<service name="Nitpicker" />
 		<service name="Timer" />
 		<service name="Report" />
@@ -693,8 +732,8 @@ set config {
 <config>
 	<default out_volume="75" volume="75" muted="0"/>
 	<channel_list>
-		<channel type="output" label="master" number="0" volume="20" muted="0"/>
-		<channel type="output" label="master" number="1" volume="20" muted="0"/>
+		<channel type="output" label="master" number="0" volume="50" muted="0"/>
+		<channel type="output" label="master" number="1" volume="50" muted="0"/>
 	</channel_list>
 </config>
 				</inline>
@@ -703,6 +742,7 @@ set config {
 			<policy label="config_rom" root="/"/>
 			<policy label="wifi_drv -> config" root="/" writeable="yes"/>
 			<policy label="cli_monitor -> noux -> noux -> config" root="/" writeable="yes"/>
+			<policy label="acpica -> system" root="/" writeable="yes"/>
 		</config>
 	</start>
 
@@ -733,7 +773,7 @@ set config {
 
 	<start name="rom" priority="-1">
 		<binary name="fs_rom"/>
-		<resource name="RAM" quantum="128M"/>
+		<resource name="RAM" quantum="400M"/>
 		<provides><service name="ROM"/></provides>
 		<route>
 			<service name="File_system"> <child name="rump_fs" /> </service>
@@ -771,8 +811,26 @@ set config {
 		</route>
 	</start>
 
+	<start name="acpica">
+		<resource name="RAM" quantum="4M"/>
+		<config reset="yes" poweroff="yes" report="yes">
+		</config>
+		<route>
+			<service name="IRQ"> <parent/> </service>
+			<service name="IO_MEM"> <parent/> </service>
+			<service name="IO_PORT"> <parent/> </service>
+			<service name="LOG"> <parent/> </service>
+			<service name="RM"> <parent/> </service>
+			<service name="Acpi"> <child name="platform_drv"/> </service>
+			<service name="Platform"> <child name="platform_drv"/> </service>
+			<service name="Report"> <child name="report_rom"/> </service>
+			<service name="ROM" label="system"> <child name="config_rom"/> </service>
+			<service name="File_system" label="system"> <child name="config_fs"/> </service>
+		</route>
+	</start>
+
 	<start name="cli_monitor" priority="-3">
-		<resource name="RAM" quantum="3G"/>
+		<resource name="RAM" quantum="7000M"/>
 		<config>
 			<vfs>
 				<dir name="subsystems">
@@ -781,8 +839,12 @@ set config {
 			</vfs>
 		</config>
 		<route>
-			<service name="File_system" label_prefix="noux" label_suffix="-> genode">
+			<service name="File_system" label_prefix="noux" label_suffix="-> system">
 				<child name="rump_fs" /> </service>
+			<service name="File_system" label_prefix="noux" label_suffix="-> home">
+				<child name="rump_fs" /> </service>
+			<service name="File_system" label_prefix="media_player">
+				<child name="shared_fs" /> </service>
 			<service name="File_system" label_prefix="noux" label_suffix="-> shared">
 				<child name="shared_fs" /> </service>
 			<service name="File_system" label_prefix="noux" label_suffix="-> config">
@@ -799,13 +861,23 @@ set config {
 				<child name="report_rom"/> </service>
 			<service name="ROM" label_prefix="noux" label_suffix="-> connectors">
 				<child name="report_rom"/> </service>
+			<service name="ROM" label_prefix="noux" label_suffix="-> acpi_ac">
+				<child name="report_rom"/> </service>
+			<service name="ROM" label_prefix="noux" label_suffix="-> acpi_battery">
+				<child name="report_rom"/> </service>
+			<service name="ROM" label_prefix="noux" label_suffix="-> acpi_ec">
+				<child name="report_rom"/> </service>
+			<service name="ROM" label_prefix="noux" label_suffix="-> acpi_fixed">
+				<child name="report_rom"/> </service>
+			<service name="ROM" label_prefix="noux" label_suffix="-> acpi_lid">
+				<child name="report_rom"/> </service>
 
 			<service name="ROM" label="cpu_load_display -> trace_subjects"> <child name="report_rom"/> </service>
 			<service name="ROM" label="linux -> vbox -> hypervisor_info_page">  <parent/> </service>
 			<service name="ROM" label="linux -> timer -> hypervisor_info_page"> <parent/> </service>
 			<service name="ROM" label="win7 -> vbox -> hypervisor_info_page">  <parent/> </service>
 			<service name="ROM" label="win7 -> timer -> hypervisor_info_page"> <parent/> </service>
-			<service name="Block">  <child name="part_blk"/>   </service>
+			<service name="Block">  <child name="ahci_drv"/>   </service>
 			<service name="Report"> <child name="report_rom"/> </service>
 			<any-service>
 				<child name="log"/>
@@ -826,80 +898,151 @@ set config {
 install_config $config
 
 set firmware_modules {
-	iwlwifi-6000-6.ucode
+	iwlwifi-6000-4.ucode
 	iwlwifi-6000g2a-6.ucode
 	iwlwifi-6000g2b-6.ucode
-	iwlwifi-7260-8.ucode
+	iwlwifi-7260-16.ucode
+	iwlwifi-7265-16.ucode
+	iwlwifi-7265D-16.ucode
+	iwlwifi-8000C-16.ucode
 }
 
 append boot_modules {
-	core init timer
-	part_blk ahci_drv
-	ld.lib.so libc.lib.so libm.lib.so pthread.lib.so
-	libc_lock_pipe.lib.so libc_terminal.lib.so
-	libiconv.lib.so stdcxx.lib.so
-	rump.lib.so rump_fs.lib.so rump_fs
-	virtualbox
-	ps2_drv
-	usb_drv
+	acpica
 	acpi_drv
-	platform_drv
-	device_pd
-	rtc_drv
-	input_merger
-	nic_drv
-	nitpicker
-	vbox_pointer
-	nit_fb
-	report_rom
-	wm decorator
-	floating_window_layouter
-	noux terminal ram_fs libc_noux.lib.so ncurses.lib.so
-	bash.tar coreutils.tar vim.tar
-	cli_monitor
-	pointer
-	file_terminal
-	terminal_log
-	wifi_drv
+	ahci_drv
 	audio_drv
-	fs_rom
-	vfs_jitterentropy.lib.so
-	libcrypto.lib.so libssl.lib.so
-	wpa_driver_nl80211.lib.so wpa_supplicant.lib.so
-	wifi.lib.so
-	wifi_drv
-	trace_subject_reporter
-	cpu_load_display
-	xray_trigger
-	rom_filter
-	intel_fb_drv
 	backdrop
+	cli_monitor
+	core
+	decorator
+	device_pd
+	file_terminal
+	floating_window_layouter
+	fs_rom
+	init
+	input_merger
+	intel_fb_drv
+	ld.lib.so
+	libc.lib.so
+	libc_pipe.lib.so
+	libcrypto.lib.so
+	libc_terminal.lib.so
+	libm.lib.so
+	libpng.lib.so
+	libssl.lib.so
 	mixer
-	libpng.lib.so zlib.lib.so
-	genode_logo.png grid.png sticks_blue.png
-	themed_decorator plain_decorator_theme.tar
+	nic_drv
+	nit_fb
+	nitpicker
+	part_blk
+	platform_drv
+	pointer
+	ps2_drv
+	ram_fs
+	report_rom
+	rom_filter
+	rtc_drv
+	rump_fs
+	rump_fs.lib.so
+	rump.lib.so
+	terminal
+	terminal_log
+	themed_decorator
+	timer
+	trace_subject_reporter
+	usb_drv
+	vbox_pointer
+	vfs_jitterentropy.lib.so
+	wifi_drv
+	wifi.lib.so
+	wm
+	wpa_driver_nl80211.lib.so
+	wpa_supplicant.lib.so
+	xray_trigger
+	zlib.lib.so
 }
 
 append boot_modules $firmware_modules
 
-# download wallpaper if needed
-if {![file exists bin/sticks_blue.png]} {
-	catch {
-		exec wget -O bin/sticks_blue.png http://genode.org/files/turmvilla/sticks_blue.png } }
+set binaries {
+	avplay
+	avresample.lib.so
+	avcodec.lib.so
+	avfilter.lib.so
+	avformat.lib.so
+	avutil.lib.so
+	cpu_load_display
+	heeselicht_logo.png
+	heeselight.png
+	grid.png
+	libc_noux.lib.so
+	libiconv.lib.so
+	ncurses.lib.so
+	noux
+	plain_decorator_theme.tar
+	pthread.lib.so
+	qemu-usb.lib.so
+	sdl.lib.so
+	stdcxx.lib.so
+	swscale.lib.so
+	virtualbox
+}
+
+# append noux-pkgs
+foreach pkg $noux_pkgs { append binaries " $pkg.tar " }
 
 # copy subsystem configurations to boot directory
 exec mkdir -p [run_dir]/subsystems
-foreach subsystem { noux linux cpu_load_display } {
+foreach subsystem { noux linux cpu_load_display media_player } {
 	file copy -force [genode_dir]/repos/gems/run/subsystems/$subsystem.subsystem \
 		[run_dir]/subsystems/ }
 
 # copy backdrop PNG images to bin directory
-foreach file { genode_logo.png grid.png } {
+foreach file { heeselicht_logo.png grid.png heeselight.png } {
 	file copy -force [genode_dir]/repos/gems/src/app/backdrop/$file bin/ }
 
+# copy VirtualBox configuration
+file copy -force [genode_dir]/repos/gems/run/vm_linux.vbox [run_dir]
+
+# write vmdk description file
+puts "sudo blockdev --getsz /dev/sda"
+set vmdk_blocks [ exec sudo blockdev --getsz /dev/sda]
+set vmdk_fd [open [run_dir]/sda.vmdk w]
+puts $vmdk_fd {# Disk DescriptorFile
+version=1
+CID=c976fef0
+parentCID=ffffffff
+createType="fullDevice"
+
+# Extent description}
+puts $vmdk_fd "RW $vmdk_blocks FLAT \"/dev/sda\" 0"
+puts $vmdk_fd {# The disk Data Base 
+#DDB
+
+ddb.virtualHWVersion = "4"
+ddb.adapterType="ide"
+ddb.geometry.cylinders="16383"
+ddb.geometry.heads="16"
+ddb.geometry.sectors="63"
+ddb.uuid.image="90741011-ebfc-4ad1-a870-68cc3c5e9417"
+ddb.uuid.parent="00000000-0000-0000-0000-000000000000"
+ddb.uuid.modification="00000000-0000-0000-0000-000000000000"
+ddb.uuid.parentmodification="00000000-0000-0000-0000-000000000000"
+ddb.geometry.biosCylinders="1024"
+ddb.geometry.biosHeads="255"
+ddb.geometry.biosSectors="63"
+}
+close $vmdk_fd
+
+# copy VIM config when available
+exec mkdir -p [run_dir]/home
+set homedir $::env(HOME)
+if {[file exists $homedir/.vimrc]} { exec cp $homedir/.vimrc [run_dir]/home/ }
+if {[file exists $homedir/.vim]} { exec cp -r $homedir/.vim [run_dir]/home/ }
+
+copy_and_strip_genode_binaries_to_run_dir $binaries
 build_boot_image $boot_modules
 
-append qemu_args " -m 512 "
-
+#append qemu_args " -m 512 "
 #run_genode_until forever
-

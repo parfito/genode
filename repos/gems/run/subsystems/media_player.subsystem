@@ -1,0 +1,46 @@
+<subsystem name="media_player" help="Media-player">
+	<resource name="RAM" quantum="128M" />
+	<binary name="init" />
+	<config verbose="yes">
+		<parent-provides>
+			<service name="ROM"/>
+			<service name="RAM"/>
+			<service name="PD"/>
+			<service name="RM"/>
+			<service name="CPU"/>
+			<service name="LOG"/>
+			<service name="Audio_out" />
+			<service name="File_system" />
+			<service name="Timer" />
+			<service name="Nitpicker" />
+		</parent-provides>
+
+		<start name="nit_fb">
+			<resource name="RAM" quantum="3M"/>
+			<provides> <service name="Framebuffer"/>
+			           <service name="Input"/> </provides>
+			<config width="800" height="600"/>
+			<route> <any-service> <parent/> </any-service> </route>
+		</start>
+
+		<start name="avplay">
+			<resource name="RAM" quantum="120M"/>
+			<config>
+				<arg value="avplay"/>
+				<arg value="mediafile"/>
+				<sdl_audio_volume value="100"/>
+				<libc stdout="/dev/log" stderr="/dev/log">
+					<vfs>
+						<dir name="dev"> <log/> </dir>
+						<fs label="media"/>
+					</vfs>
+				</libc>
+			</config>
+			<route>
+				<service name="Framebuffer"> <child name="nit_fb"/> </service>
+				<service name="Input"> <child name="nit_fb"/> </service>
+				<any-service> <parent/> </any-service>
+			</route>
+		</start>
+	</config>
+</subsystem>
