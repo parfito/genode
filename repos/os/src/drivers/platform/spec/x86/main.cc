@@ -65,6 +65,8 @@ struct Platform::Main
 
 	void system_update()
 	{
+		if (!system_state.is_constructed()) return;
+
 		system_state->update();
 
 		if (!system_state->is_valid() || !root.is_constructed())
