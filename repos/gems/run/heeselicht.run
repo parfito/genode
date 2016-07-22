@@ -121,7 +121,7 @@ set config {
 			<service name="Acpi"/>
 			<service name="Platform"/>
 		</provides>
-		<config system="yes">
+		<config system="yes" verbose="yes">
 			<policy label="ps2_drv">  <device name="PS2"/> </policy>
 			<policy label="nic_drv">  <pci class="ETHERNET"/> </policy>
 			<policy label="fb_drv">   <pci class="VGA"/> </policy>
@@ -141,9 +141,33 @@ set config {
 		<route>
 			<service name="ROM" label="acpi"> <child name="acpi_report_rom"/> </service>
 			<service name="ROM" label="system"> <child name="config_rom"/> </service>
+			<service name="ROM" label="acpi_ready"> <child name="acpi_state"/> </service>
 			<any-service> <parent/> </any-service>
 		</route>
 	</start>
+
+        <start name="acpi_state">
+                <binary name="report_rom"/>
+                <resource name="RAM" quantum="2M"/>
+                <provides>
+                        <service name="ROM" />
+                        <service name="Report" />
+                </provides>
+                <config verbose="yes">
+                        <policy label="platform_drv -> acpi_ready" report="acpica -> acpi_ready"/>
+                        <policy label="acpi_input -> acpi_ac" report="acpica -> acpi_ac"/>
+                        <policy label="acpi_input -> acpi_battery" report="acpica -> acpi_battery"/>
+                        <policy label="acpi_input -> acpi_ec" report="acpica -> acpi_ec"/>
+                        <policy label="acpi_input -> acpi_fixed" report="acpica -> acpi_fixed"/>
+                        <policy label="acpi_input -> acpi_lid" report="acpica -> acpi_lid"/>
+                </config>
+                <route>
+                        <service name="LOG"> <parent/> </service>
+                        <service name="SIGNAL"> <parent/> </service>
+                        <service name="CAP"> <parent/> </service>
+                        <service name="RM"> <parent/> </service>
+                </route>
+        </start>
 
 	<start name="ahci_drv" priority="-1">
 		<binary name="ahci_drv" />
