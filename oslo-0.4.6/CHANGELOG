@@ -1,0 +1,117 @@
+OSLO (0.4.6)
+
+* relocatable ELF loader - thanks to Julian Stecklina
+* new STM vendor ID and support for K10 boards  - thanks to Josh Schiffman
+* fix boot of newer linux kernels
+* relocate initrds that are unreachable
+
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Mo, 14 June 2010
+
+
+OSLO (0.4.5)
+
+* fix tis_access return code check in Beirut to work with Atmel TPMs
+* fix reboot function
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Di, 19 June 2007
+
+
+OSLO (0.4.4)
+
+* make tis_access() portable - thanks to Broadcom
+* add support for Qemu TPM
+* made it more usable for the linux wrapper tis_oslo
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Di, 13 March 2007
+
+
+OSLO (0.4.3)
+
+  * support for Broadcom TPMs - thanks to Jonathan M. McCune for debugging
+  * use another region for realmode code to not clash with PXE loader
+  * improved 64bit cleanness
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Mo, 26 February 2007
+
+
+OSLO (0.4.2)
+
+  * fix initialization of serial devices
+  * add pamplona code to start unmodified OSes
+  * fix multiboot header
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Mo, 13 November 2006
+
+
+OSLO (0.4.1)
+
+  * fix nasty SHA1 bug, triggered on hashing cmdlines
+  * add fixup code for buggy Atmel TPMs
+  * add serial output for debugging
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Fr, 20 October 2006
+
+
+OSLO (0.4.0)
+
+  * execute MP fixup code on multiprocessor platforms
+  * fixes the "ACPI enable" bug
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Fr, 14 July 2006
+
+
+OSLO (0.3.5)
+
+  * added MUNICH to start Linux from a multiboot loader
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Wed, 05 July 2006
+
+
+OSLO (0.3.4)
+
+  * added BEIRUT to calc hashes of command lines
+  * output a message label ("OSLO:") to distuingish different apps
+  * move start_module into elf.c to allow sharing with BEIRUT
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Wed, 07 June 2006
+
+
+OSLO (0.3.3)
+
+  * do not give the locality with every command
+  * make header files ANSI-C compatible
+  * set bootloader name in mbi structure
+  * bugfix: calc a hash for every module
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Tue, 30 May 2006
+
+OSLO (0.3.2)
+
+  * poll the PIT to wait a number of milliseconds
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Thu, 27 Apr 2006
+
+
+OSLO (0.3.1)
+
+  * implement memcpy and memset to let it compile with gcc-3.4
+  * use -ffunction-sections and -gc-section to remove unused code
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Wed, 19 Apr 2006
+
+
+OSLO (0.3)
+
+  * support for multiprocessor platforms
+  * fix "SL length multiple of 4" bug
+  * renamed to OSLO because of naming conflicts
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Fri, 7 Apr 2006
+
+
+OSL (0.2)
+
+  * initial public release
+
+ -- Bernhard Kauer <kauer@os.inf.tu-dresden.de>  Thu, 28 Mar 2006
