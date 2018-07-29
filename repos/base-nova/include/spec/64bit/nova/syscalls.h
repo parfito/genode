@@ -63,13 +63,13 @@ namespace Nova {
 
 	ALWAYS_INLINE
 	inline uint8_t syscall_1(Syscall s, uint8_t flags, mword_t sel, mword_t p1,
-	                         mword_t * p2 = 0)
+	                         mword_t * p2 = 0, mword_t debug = 0)
 	{
 		mword_t status = rdi(s, flags, sel);
-
+                register mword_t r9 asm ("r9") = debug;
 		asm volatile ("syscall"
 		              : "+D" (status), "+S" (p1)
-		              :
+		              : "r" (r9)
 		              : "rcx", "r11", "memory");
 		if (p2) *p2 = p1;
 		return status;
@@ -92,13 +92,14 @@ namespace Nova {
 
 	ALWAYS_INLINE
 	inline uint8_t syscall_3(Syscall s, uint8_t flags, unsigned sel,
-	                         mword_t p1, mword_t p2, mword_t p3)
+	                         mword_t p1, mword_t p2, mword_t p3, const void* name = 0)
 	{
 		mword_t status = rdi(s, flags, sel);
+                register const void* r9 asm ("r9") = name;
 
 		asm volatile ("syscall"
 		              : "+D" (status)
-		              : "S" (p1), "d" (p2), "a" (p3)
+		              : "S" (p1), "d" (p2), "a" (p3), "r" (r9)
 		              : "rcx", "r11", "memory");
 		return status;
 	}
@@ -106,14 +107,15 @@ namespace Nova {
 
 	ALWAYS_INLINE
 	inline uint8_t syscall_4(Syscall s, uint8_t flags, mword_t sel,
-	                         mword_t p1, mword_t p2, mword_t p3, mword_t p4)
+	                         mword_t p1, mword_t p2, mword_t p3, mword_t p4, void* name = 0)
 	{
 		mword_t status = rdi(s, flags, sel);
 		register mword_t r8 asm ("r8") = p4;
+                register void* r9 asm ("r9") = name;
 
 		asm volatile ("syscall;"
 		              : "+D" (status)
-		              : "S" (p1), "d" (p2), "a" (p3), "r" (r8)
+		              : "S" (p1), "d" (p2), "a" (p3), "r" (r8), "r" (r9)
 		              : "rcx", "r11", "memory");
 		return status;
 	}
@@ -141,6 +143,13 @@ namespace Nova {
 
 
 	ALWAYS_INLINE
+	inline uint8_t debug(mword_t level)
+	{
+		return syscall_1(NOVA_CALL, 0, 0, 0, 0, level);
+	}
+
+             
+        ALWAYS_INLINE
 	__attribute__((noreturn))
 	inline void reply(void *next_sp, unsigned long sm = 0)
 	{
@@ -157,10 +166,10 @@ namespace Nova {
 
 	ALWAYS_INLINE
 	inline uint8_t create_pd(mword_t pd0, mword_t pd, Crd crd,
-	                         unsigned lower_limit, unsigned long upper_limit)
+	                         unsigned lower_limit, unsigned long upper_limit, const void* name = 0)
 	{
 		return syscall_3(NOVA_CREATE_PD, 0, pd0, pd, crd.value(),
-		                 upper_limit << 32 | lower_limit);
+		                 upper_limit << 32 | lower_limit, name);
 	}
 
 
@@ -183,11 +192,11 @@ namespace Nova {
 	 */
 	ALWAYS_INLINE
 	inline uint8_t create_ec(mword_t ec, mword_t pd, mword_t cpu, mword_t utcb,
-	                         mword_t esp, mword_t evt, bool global = false)
+	                         mword_t esp, mword_t evt, bool global = false, void* name = 0 )
 	{
 		return syscall_4(NOVA_CREATE_EC, global, ec, pd,
 		                 (cpu & 0xfff) | (utcb & ~0xfff),
-		                 esp, evt);
+		                 esp, evt, name);
 	}
 
 

@@ -108,7 +108,7 @@ proc run_power_on { } {
 				# okl4 system integration specifies RAM from 32 to 800 MiB
 				append qemu_args " -m 800 "
 			} else {
-				append qemu_args " -m 512 "
+				append qemu_args " -m 3072 "
 			}
 		}
 		if {[have_include "load/tftp"]} {

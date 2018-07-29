@@ -60,7 +60,7 @@ Platform_pd::Platform_pd(Allocator &, char const *label, signed, bool)
 	uint8_t res = Nova::create_pd(_pd_sel, platform_specific().core_pd_sel(),
 	                        Nova::Obj_crd(),
 	                        KEEP_FREE_PAGES_NOT_AVAILABLE_FOR_UPGRADE,
-	                        UPPER_LIMIT_PAGES);
+	                        UPPER_LIMIT_PAGES, _label);
 
 	if (res != Nova::NOVA_OK)
 		error("create_pd returned ", res);
