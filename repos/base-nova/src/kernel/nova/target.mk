@@ -33,7 +33,7 @@ else
 ifeq ($(filter-out $(SPECS),64bit),)
 override CC_MARCH = -m64
 CC_WARN         += -Wframe-larger-than=256
-CC_OPT          += -mpreferred-stack-boundary=4 -mcmodel=kernel -mno-red-zone
+CC_OPT          += -mpreferred-stack-boundary=4 -mcmodel=large -mno-red-zone
 else
 $(error Unsupported environment)
 endif
@@ -50,7 +50,7 @@ LD_SCRIPT_STATIC = hypervisor.o
 $(TARGET): hypervisor.o
 
 hypervisor.o: $(NOVA_SRC_DIR)/src/hypervisor.ld target.mk
-	$(VERBOSE)$(CC) $(INCLUDES) -DCONFIG_KERNEL_MEMORY=32M -MP -MMD -pipe $(CC_MARCH) -xc -E -P $< -o $@
+	$(VERBOSE)$(CC) $(INCLUDES) -DCONFIG_KERNEL_MEMORY=960M -MP -MMD -pipe $(CC_MARCH) -xc -E -P $< -o $@
 
 clean cleanall:
 	$(VERBOSE)rm -rf $(NOVA_BUILD_DIR)
