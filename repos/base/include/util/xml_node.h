@@ -499,7 +499,7 @@ class Genode::Xml_node
 		};
 
 		int _num_sub_nodes { 0 }; /* number of immediate sub nodes */
-
+		
 		const char * _addr;       /* first character of XML data */
 		size_t       _max_len;    /* length of XML data in characters */
 		Tag          _start_tag;
@@ -515,17 +515,17 @@ class Genode::Xml_node
 		 * and the same name as the start tag of the XML node. If the XML
 		 * structure is invalid, the search results is an invalid Tag.
 		 */
-		static Tag _search_end_tag(Tag start_tag, int &sub_nodes_count)
+		Tag _init_end_tag()
 		{
 			/*
 			 * If the start tag is invalid or an empty-element tag,
 			 * we use the same tag as end tag.
 			 */
-			if (start_tag.type() != Tag::START)
-				return start_tag;
+			if (_start_tag.type() != Tag::START)
+				return _start_tag;
 
 			int   depth = 1;
-			Token curr_token = start_tag.next_token();
+			Token curr_token = _start_tag.next_token();
 
 			while (curr_token.type() != Token::END) {
 
@@ -545,7 +545,7 @@ class Genode::Xml_node
 
 				/* count sub nodes at depth 1 */
 				if (depth == 1 && curr_tag.node())
-					sub_nodes_count++;
+					_num_sub_nodes++;
 
 				/* keep track of the current depth */
 				depth += (curr_tag.type() == Tag::START);
@@ -560,10 +560,10 @@ class Genode::Xml_node
 				}
 
 				/* reaching the same depth as the start tag */
-				const char *start_name = start_tag.name().start();
-				size_t      start_len  = start_tag.name().len();
-				const char *curr_name  =  curr_tag.name().start();
-				size_t      curr_len   =  curr_tag.name().len();
+				const char *start_name = _start_tag.name().start();
+				size_t      start_len  = _start_tag.name().len();
+				const char *curr_name  =   curr_tag.name().start();
+				size_t      curr_len   =   curr_tag.name().len();
 
 				/* on mismatch of start tag and end tag, return invalid tag */
 				if (start_len != curr_len
@@ -633,14 +633,14 @@ class Genode::Xml_node
 		 *
 		 * \throw Invalid_syntax
 		 */
-		Xml_node(const char *addr, size_t max_len = ~0UL)
-		:
+		Xml_node(const char *addr, size_t max_len = ~0UL) 
+                :
 			_addr(addr),
 			_max_len(max_len),
 			_start_tag(skip_non_tag_characters(Token(addr, max_len))),
-			_end_tag(_search_end_tag(_start_tag, _num_sub_nodes))
+			_end_tag(_init_end_tag())
 		{
-			/* check validity of XML node */
+                        /* check validity of XML node */
 			if (_start_tag.type() == Tag::EMPTY) return;
 			if (_start_tag.type() == Tag::START && _end_tag.type() == Tag::END) return;
 
@@ -987,8 +987,8 @@ class Genode::Xml_node
 
 		void print(Output &output) const {
 			output.out_string(_addr, size()); }
-
-		/**
+                
+/**
 		 * Return true if this node differs from 'another'
 		 */
 		bool differs_from(Xml_node const &another) const

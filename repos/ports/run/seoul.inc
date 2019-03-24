@@ -235,9 +235,12 @@ append_if [expr $use_nic_session && $use_nic_bridge] config {
 	</start>
 }
 
-append_if $use_framebuffer config {
-	<start name="fb_drv" priority="-1" caps="120">
-		<resource name="RAM" quantum="8M"/>
+if {$use_framebuffer} {
+    append config "
+        <start name=\"$fb_name\" priority=\"-1\" caps=\"$fb_caps\">"
+    append config "
+     		<resource name=\"RAM\" quantum=\"$fb_quantum\"/>"
+    append config {
 		<provides><service name="Framebuffer"/></provides>
 		<route>
 			<service name="Timer"><child name="timer"/></service>
@@ -245,7 +248,10 @@ append_if $use_framebuffer config {
 			<any-service><parent/></any-service>
 		</route>
 		<config width="1024" height="768" depth="16" buffered="yes"/>
-	</start> }
+
+	</start>
+    }
+}
 
 if {!$use_fancy_stuff} {
 append config {
@@ -260,8 +266,11 @@ append_if [expr $use_nic_session && $use_nic_bridge] config {
 			<service name="Nic"> <child name="nic_bridge"/> </service>}
 append_if [expr $use_nic_session && !$use_nic_bridge] config {
 			<service name="Nic"> <child name="nic_drv"/> </service>}
-append_if $use_framebuffer config {
-			<service name="Framebuffer"><child name="fb_drv"/></service>}
+if {$use_framebuffer} {
+    append config "
+			<service name=\"Framebuffer\"><child name=\"$fb_name\"/></service>"
+    
+}
 append_if $use_genode_iso config {
 			<service name="ROM" unscoped_label="seoul"> <parent/> </service>
 			<service name="ROM" label="vm_seoul.cfg"> <parent/> </service>
@@ -299,7 +308,7 @@ append_if $use_fancy_stuff config {
 		</config>
 		<route>
 			<service name="Timer">      <child name="timer"/></service>
-			<service name="Framebuffer"><child name="fb_drv"/></service>
+			<service name="Framebuffer"><child name="$fb_name"/></service>
 			<service name="Report">     <child name="report_rom"/></service>
 			<any-service><parent/><any-child/></any-service>
 		</route>
@@ -419,7 +428,7 @@ lappend_if $use_block_ram     boot_modules ram_block
 lappend_if $use_block_sata    boot_modules ahci_drv
 lappend_if $use_nic_session   boot_modules nic_drv
 lappend_if $use_nic_bridge    boot_modules nic_bridge
-lappend_if $use_framebuffer   boot_modules fb_drv
+lappend_if $use_framebuffer   boot_modules $fb_name
 
 lappend_if $use_fancy_stuff   boot_modules nitpicker
 lappend_if $use_fancy_stuff   boot_modules pointer
