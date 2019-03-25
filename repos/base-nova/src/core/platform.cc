@@ -226,7 +226,7 @@ static addr_t init_core_page_fault_handler(addr_t const core_pd_sel)
 		EXC_BASE   = 0
 	};
 
-	addr_t ec_sel = cap_map()->insert(1);
+	addr_t ec_sel = cap_map().insert(1);
         char name[30] = "init_core_page_fault_handler";
         
 	uint8_t ret = create_ec(ec_sel, core_pd_sel, boot_cpu(),
