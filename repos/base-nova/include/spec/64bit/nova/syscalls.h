@@ -143,8 +143,13 @@ namespace Nova {
 
 
 	ALWAYS_INLINE
+        /**
+         * level : should never be 0
+         */
 	inline uint8_t debug(mword_t level)
 	{
+                if(!level)
+                    return 1;
 		return syscall_1(NOVA_CALL, 0, 0, 0, 0, level);
 	}
 
