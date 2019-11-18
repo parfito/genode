@@ -23,7 +23,7 @@ CC_OPT          += -pipe \
                    -fno-asynchronous-unwind-tables -std=gnu++0x
 # kernel memory: 28M minimum dynamic or 10 pro mill of the system memory
 CC_OPT          += -DCONFIG_MEMORY_DYN_MIN=0x1c00000 \
-                   -DCONFIG_MEMORY_DYN_PER_MILL=100
+                   -DCONFIG_MEMORY_DYN_PER_MILL=200
 CC_OPT_PIC      :=
 ifeq ($(filter-out $(SPECS),32bit),)
 override CC_MARCH = -m32
