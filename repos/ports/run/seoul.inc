@@ -7,8 +7,7 @@
 
 create_boot_directory
 
-import_from_depot [depot_user]/src/[base_src] \
-                  [depot_user]/src/init \
+import_from_depot [depot_user]/src/init \
                   [depot_user]/src/nitpicker
 #
 # Build
@@ -47,6 +46,7 @@ source ${genode_dir}/repos/base/run/platform_drv.inc
 proc platform_drv_priority {} { return { priority="-1"} }
 
 set build_components {
+	core init timer
 	drivers/rtc
 	drivers/input
 	app/seoul
@@ -432,6 +432,8 @@ install_config $config
 
 # generic modules
 set boot_modules {
+	core ld.lib.so init
+	timer
 	rtc_drv
 	seoul
 	vm_seoul.cfg
