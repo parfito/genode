@@ -3,7 +3,7 @@ proc binary_name_core_o    { } { return "core-nova.o" }
 proc binary_name_timer     { } { return "nova_timer_drv" }
 
 proc kernel_files { } { return hypervisor }
-proc kernel_output { } { return "novga serial" }
+proc kernel_output { } { return "vtlb novga serial keyb" }
 
 proc run_boot_string { } {
 	return "\nHypervisor reports "
@@ -63,7 +63,7 @@ proc run_boot_dir {binaries} {
 		#
 		# Compress Genode image, to be uncompressed by GRUB
 		#
-		exec gzip [run_dir]/boot/image.elf
+		exec gzip -k [run_dir]/boot/image.elf
 
 		set serial_bender_opt ""
 

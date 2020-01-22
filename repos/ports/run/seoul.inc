@@ -335,7 +335,7 @@ append config {
 		</config>
 		<route>
 			<service name="Timer">      <child name="timer"/></service>
-			<service name="Framebuffer"><child name="fb_drv"/></service>
+			<service name="Framebuffer"><child name="$fb_name"/></service>
 			<service name="Report">     <child name="report_rom"/></service>
 			<any-service><parent/><any-child/></any-service>
 		</route>
