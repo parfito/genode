@@ -55,6 +55,7 @@ export LIB_PROGRESS_LOG ?= $(BUILD_BASE_DIR)/progress.log
 export LIB_DEP_FILE     ?= var/libdeps
 export ECHO             ?= echo -e
 export CONTRIB_DIR
+export BOARD
 
 # Force stable sorting order
 export LC_COLLATE=C
@@ -79,6 +80,9 @@ export SHELL := $(shell which bash)
 # Fetch SPECS configuration from all source repositories and the build directory
 #
 SPECS :=
+ifneq ($(BOARD),)
+SPECS += $(BOARD)
+endif
 -include $(foreach REP,$(REPOSITORIES),$(wildcard $(REP)/etc/specs.conf))
 -include $(BUILD_BASE_DIR)/etc/specs.conf
 
@@ -125,7 +129,7 @@ endif
 # Empty DST_DIRS is interpreted as a tool-chain agnostic target, e.g., clean.
 #
 ifneq ($(DST_DIRS),)
-REQUIRED_GCC_VERSION ?= 6.3.0
+REQUIRED_GCC_VERSION ?= 8.3.0
 GCC_VERSION := $(filter $(REQUIRED_GCC_VERSION) ,$(shell $(CUSTOM_CXX) --version))
 ifneq ($(GCC_VERSION), $(REQUIRED_GCC_VERSION))
 $(error "$(CUSTOM_CXX) version $(REQUIRED_GCC_VERSION) is required")
@@ -320,9 +324,11 @@ run/%: $(call select_from_repositories,run/%.run) $(RUN_ENV)
 	$(VERBOSE)$(GENODE_DIR)/tool/run/run --genode-dir $(GENODE_DIR) \
 	                                     --name $* \
 	                                     --specs "$(SPECS)" \
+	                                     --board "$(BOARD)" \
 	                                     --repositories "$(REPOSITORIES)" \
 	                                     --cross-dev-prefix "$(CROSS_DEV_PREFIX)" \
 	                                     --qemu-args "$(QEMU_OPT)" \
+	                                     --make "$(MAKE)" \
 	                                     $(RUN_OPT) \
 	                                     --include $(RUN_SCRIPT)
 

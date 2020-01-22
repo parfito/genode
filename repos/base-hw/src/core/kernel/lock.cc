@@ -11,6 +11,10 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+#include <base/lock_guard.h>
+#include <cpu/atomic.h>
+#include <cpu/memory_barrier.h>
+
 #include <kernel/cpu.h>
 #include <kernel/lock.h>
 #include <kernel/kernel.h>
@@ -29,9 +33,10 @@ void Kernel::Lock::lock()
 		/* at least print an error message */
 		Genode::raw("Cpu ", _current_cpu,
 		            " error: re-entered lock. Kernel exception?!");
-		for (;;) ;
 	}
-	_lock.lock();
+
+	while (!Genode::cmpxchg((volatile int*)&_locked, UNLOCKED, LOCKED)) { ; }
+
 	_current_cpu = Cpu::executing_id();
 }
 
@@ -39,5 +44,7 @@ void Kernel::Lock::lock()
 void Kernel::Lock::unlock()
 {
 	_current_cpu = INVALID;
-	_lock.unlock();
+
+	Genode::memory_barrier();
+	_locked = UNLOCKED;
 }

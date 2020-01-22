@@ -27,7 +27,7 @@ int Driver::_wait_for_card_ready_mbw()
 	 * freely chosen.
 	 */
 	unsigned           attempts          = 5;
-	unsigned constexpr attempts_delay_us = 100000;
+	uint64_t constexpr attempts_delay_us = 100000;
 	while (1) {
 		if (!attempts) {
 			error("Reading card status after multiblock write failed");
@@ -105,7 +105,9 @@ void Driver::_handle_irq()
 	 * done with other controllers - isn't sufficient. Instead, both "Transfer
 	 * Complete" and "Command Complete" must be gathered.
 	 */
-	try { wait_for(_delayer, Irqstat::Cc::Equal(1), Irqstat::Tc::Equal(1)); }
+	try {
+		wait_for(Attempts(1000), Microseconds(1000), _delayer,
+		         Irqstat::Cc::Equal(1), Irqstat::Tc::Equal(1)); }
 	catch (Polling_timeout) {
 		error("Completion host signal timed out");
 		throw -1;
@@ -244,12 +246,12 @@ int Driver::_prepare_dma_mb(Block::Packet_descriptor packet,
 
 
 	/* write ADMA2 table to DMA */
-	size_t const req_size = blk_cnt * block_size();
+	size_t const req_size = blk_cnt * _block_size();
 	if (_adma2_table.setup_request(req_size, buf_phys)) { return -1; }
 
 	/* configure DMA at host */
 	Mmio::write<Adsaddr>(_adma2_table.base_phys());
-	Mmio::write<Blkattr::Blksize>(block_size());
+	Mmio::write<Blkattr::Blksize>(_block_size());
 	Mmio::write<Blkattr::Blkcnt>(blk_cnt);
 
 	_block_transfer.read    = reading;
@@ -394,7 +396,7 @@ Card_info Driver::_init()
 	_delayer.usleep(10000);
 
 	/* configure card to use given block size */
-	if (!issue_command(Set_blocklen(block_size()))) {
+	if (!issue_command(Set_blocklen(_block_size()))) {
 		_detect_err("Set_blocklen command failed"); }
 
 	/* configure host buffer */

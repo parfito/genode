@@ -61,7 +61,6 @@ struct Genode::Register_set_plain_access
 	 * \param IMPLEMENTATION  implementation of access on the plain integer level
 	 * \param impl            instance of the access implementation
 	 * \param offset          register offset
-	 * \param value           value to be written to the register
 	 */
 	template <typename ACCESS_T, typename IMPLEMENTATION>
 	static inline ACCESS_T read(IMPLEMENTATION &impl, off_t const offset) {
@@ -667,8 +666,8 @@ class Genode::Register_set : Noncopyable
 
 		struct Microseconds
 		{
-			unsigned value;
-			explicit Microseconds(unsigned value) : value(value) { }
+			uint64_t value;
+			explicit Microseconds(uint64_t value) : value(value) { }
 		};
 
 		/**
@@ -679,7 +678,7 @@ class Genode::Register_set : Noncopyable
 			/**
 			 * Delay execution of the caller for 'us' microseconds
 			 */
-			virtual void usleep(unsigned us) = 0;
+			virtual void usleep(uint64_t us) = 0;
 		};
 
 

@@ -18,6 +18,7 @@
 /* Genode includes */
 #include <base/ram_allocator.h>
 #include <base/thread.h>
+#include <base/trace/types.h>
 
 /* base-internal includes */
 #include <base/internal/native_utcb.h>
@@ -58,6 +59,8 @@ namespace Genode {
 		Native_utcb *            _utcb_core_addr { }; /* UTCB addr in core */
 		Native_utcb *            _utcb_pd_addr;       /* UTCB addr in pd   */
 		Ram_dataspace_capability _utcb           { }; /* UTCB dataspace    */
+		unsigned                 _priority       {0};
+		unsigned                 _quota          {0};
 
 		/*
 		 * Wether this thread is the main thread of a program.
@@ -83,7 +86,7 @@ namespace Genode {
 		 */
 		bool _attaches_utcb_by_itself();
 
-		unsigned _priority(unsigned virt_prio)
+		unsigned _scale_priority(unsigned virt_prio)
 		{
 			return Cpu_session::scale_priority(Kernel::Cpu_priority::MAX,
 			                                   virt_prio);
@@ -119,7 +122,7 @@ namespace Genode {
 			/**
 			 * Return information about current fault
 			 */
-			Kernel::Thread_fault fault_info() { return _kobj.kernel_object()->fault(); }
+			Kernel::Thread_fault fault_info() { return _kobj->fault(); }
 
 			/**
 			 * Join a protection domain
@@ -147,7 +150,7 @@ namespace Genode {
 			/**
 			 * Pause this thread
 			 */
-			void pause() { Kernel::pause_thread(_kobj.kernel_object()); }
+			void pause() { Kernel::pause_thread(*_kobj); }
 
 			/**
 			 * Enable/disable single stepping
@@ -157,13 +160,13 @@ namespace Genode {
 			/**
 			 * Resume this thread
 			 */
-			void resume() { Kernel::resume_thread(_kobj.kernel_object()); }
+			void resume() { Kernel::resume_thread(*_kobj); }
 
 			/**
 			 * Cancel currently blocking operation
 			 */
 			void cancel_blocking() {
-				Kernel::cancel_thread_blocking(_kobj.kernel_object()); }
+				Kernel::cancel_thread_blocking(*_kobj); }
 
 			/**
 			 * Set CPU quota of the thread to 'quota'
@@ -205,7 +208,11 @@ namespace Genode {
 			/**
 			 * Return execution time consumed by the thread
 			 */
-			unsigned long long execution_time() const { return 0; }
+			Trace::Execution_time execution_time() const
+			{
+				Genode::uint64_t execution_time =
+					const_cast<Platform_thread *>(this)->_kobj->execution_time();
+				return { execution_time, 0, _quota, _priority }; }
 
 
 			/***************

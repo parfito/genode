@@ -18,11 +18,13 @@
 #include <base/allocator.h>
 #include <base/exception.h>
 #include <base/stdint.h>
+#include <rom_session/rom_session.h>
 
 namespace Genode {
 
 	class  Shared_object;
 	struct Address_info;
+	struct Dynamic_linker;
 };
 
 
@@ -116,6 +118,84 @@ struct Genode::Address_info
 	class Invalid_address : public Genode::Exception { };
 
 	Address_info(Genode::addr_t addr);
+};
+
+
+class Genode::Dynamic_linker
+{
+	public:
+
+		struct Object_info
+		{
+			/* name of shared library, or "binary" for the main program */
+			typedef String<64> Name;
+			Name name;
+
+			Rom_dataspace_capability ds_cap;
+
+			/* pointer to the start of the read/writeable segment */
+			void *rw_start;
+
+			/* size of the read-writeable segment in bytes */
+			size_t rw_size;
+		};
+
+	private:
+
+		struct For_each_fn : Interface
+		{
+			virtual void supply_object_info(Object_info const &) const = 0;
+		};
+
+		static void _for_each_loaded_object(Env &, For_each_fn const &);
+
+		static void *_respawn(Env &, char const *, char const *);
+
+	public:
+
+		/**
+		 * Call 'fn' for each loaded object with 'Object_info' as argument
+		 */
+		template <typename FN>
+		static inline void for_each_loaded_object(Env &env, FN const &fn)
+		{
+			struct For_each_fn_impl : For_each_fn
+			{
+				FN const &fn;
+
+				void supply_object_info(Object_info const &info) const { fn(info); }
+
+				For_each_fn_impl(FN const &fn) : fn(fn) { }
+
+			} wrapped_fn { fn };
+
+			_for_each_loaded_object(env, wrapped_fn);
+		}
+
+		/**
+		 * Prevent loaded shared object 'name' to be unloaded
+		 */
+		static void keep(Env &, char const *name);
+
+		typedef Shared_object::Invalid_rom_module Invalid_rom_module;
+		typedef Shared_object::Invalid_symbol     Invalid_symbol;
+
+		/**
+		 * Replace executable binary
+		 *
+		 * \param binary_name   ROM module name of new executable binary
+		 * \param start_symbol  symbol name of the binary's entry point
+		 *
+		 * \return  pointer to entry point of the new executable
+		 *
+		 * \throw Invalid_rom_module
+		 * \throw Invalid_symbol
+		 */
+		template<typename T = void *>
+		static T respawn(Env &env, char const *binary_name, char const *entrypoint_name)
+		{
+			return reinterpret_cast<T>(_respawn(env, binary_name, entrypoint_name));
+		}
 };
 
 #endif /* _INCLUDE__BASE__SHARED_OBJECT_H_ */

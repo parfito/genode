@@ -12,8 +12,10 @@
  */
 
 #include <base/log.h>
+#include <cpu/atomic.h>
+#include <cpu/memory_barrier.h>
+
 #include <hw/spec/arm/cortex_a9.h>
-#include <hw/spin_lock.h>
 #include <util/mmio.h>
 
 #include <platform.h>
@@ -29,20 +31,24 @@ class Cpu_counter
 {
 	private:
 
-		Hw::Spin_lock _lock { };
-		volatile int _value = 0;
+		enum State { UNLOCKED, LOCKED };
+
+		State volatile    _locked  { UNLOCKED };
+		unsigned volatile _counter { 0 };
 
 	public:
 
 		void inc()
 		{
-			Hw::Spin_lock::Guard guard(_lock);
+			while (!Genode::cmpxchg((volatile int*)&_locked, UNLOCKED, LOCKED))
+				;
+			_counter++;
 			Genode::memory_barrier();
-			_value++;
+			_locked = UNLOCKED;
 		}
 
-		void wait_for(int const v) {
-			while (_value < v) ; }
+		void wait_for(unsigned const v) {
+			while (_counter < v) ; }
 };
 
 
@@ -97,7 +103,7 @@ struct Scu : Genode::Mmio
  */
 unsigned Bootstrap::Platform::enable_mmu()
 {
-	using namespace Bootstrap;
+	using namespace Board;
 
 	static volatile bool primary_cpu = true;
 	static Cpu_counter   data_cache_invalidated;
@@ -112,7 +118,7 @@ unsigned Bootstrap::Platform::enable_mmu()
 	Actlr::disable_smp();
 
 	/* locally initialize interrupt controller */
-	pic.init_cpu_local();
+	::Board::Pic pic { };
 
 	Cpu::invalidate_data_cache();
 	data_cache_invalidated.inc();

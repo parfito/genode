@@ -78,6 +78,8 @@ struct Extract::Extracted_archive : Noncopyable
 	{
 		archive * const ptr = archive_read_new();
 
+		using Noncopyable::Noncopyable;
+
 		~Source()
 		{
 			archive_read_close(ptr);
@@ -88,6 +90,8 @@ struct Extract::Extracted_archive : Noncopyable
 	struct Destination : Noncopyable
 	{
 		archive * const ptr = archive_write_disk_new();
+
+		using Noncopyable::Noncopyable;
 
 		~Destination()
 		{
@@ -291,6 +295,20 @@ void Libc::Component::construct(Libc::Env &env)
 	static Extract::Main main(env);
 }
 
-/* dummy to prevent warning printed by unimplemented libc function */
+/**
+ * Dummy to prevent warning printed by unimplemented libc function
+ */
 extern "C" mode_t umask(mode_t value) { return value; }
+
+/**
+ * Dummy to discharge the dependency from a timer session
+ *
+ * When libarchive creates a archives, it requests the current time to create
+ * up-to-date time stamps. Unfortunately, however, 'time' is called
+ * unconditionally regardless of whether an archive is created or extracted.
+ * In the latter (our) case, the wall-clock time is not relevant. Still,
+ * libarchive creates an artificial dependency from a time source in either
+ * case.
+ */
+extern "C" time_t time(time_t *) { return 0; }
 

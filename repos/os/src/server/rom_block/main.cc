@@ -44,14 +44,12 @@ class Rom_block : public Block::Driver
 		 ** Block-driver interface **
 		 ****************************/
 
-		size_t          block_size()  override { return _blk_sz;  }
-		Block::sector_t block_count() override { return _blk_cnt; }
-
-		Block::Session::Operations ops() override
+		Block::Session::Info info() const override
 		{
-			Block::Session::Operations o;
-			o.set_operation(Block::Packet_descriptor::READ);
-			return o;
+			return { .block_size  = _blk_sz,
+			         .block_count = _blk_cnt,
+			         .align_log2  = log2(_blk_sz),
+			         .writeable   = false };
 		}
 
 		void read(Block::sector_t           block_number,

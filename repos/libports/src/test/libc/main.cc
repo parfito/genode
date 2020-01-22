@@ -21,14 +21,19 @@
 #include <base/env.h>
 
 /* libC includes */
+extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/random.h>
 #include <sys/syscall.h>
-
+#include <sys/limits.h>
+#include <time.h>
+#include <inttypes.h>
+}
 
 int main(int argc, char **argv)
 {
@@ -147,6 +152,31 @@ int main(int argc, char **argv)
 		}
 	}
 
+	{
+		/* test dup of stderr (issue #3477) */
+		int const new_fd = dup(STDERR_FILENO);
+		if (new_fd < 0) {
+			printf("dup of stderr failed\n");
+			++error_count;
+		} else {
+			close(new_fd);
+		}
+	}
+
+	{
+		/* test double dup2 (issue #3505) */
+		int const new_fd = 17, another_new_fd = 18;
+		if (dup2(STDERR_FILENO, new_fd)         == new_fd
+		 && dup2(STDERR_FILENO, another_new_fd) == another_new_fd) {
+
+			close(new_fd);
+			close(another_new_fd);
+		} else {
+			printf("dup2 of stderr failed\n");
+			++error_count;
+		}
+	}
+
 	perror("perror");
 
 	struct timespec ts;
@@ -154,8 +184,53 @@ int main(int argc, char **argv)
 		sleep(1);
 		ts.tv_sec = ts.tv_nsec = 0;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		printf("sleep/gettime: %.09f\n", ts.tv_sec + ts.tv_nsec / 1000000000.0);
+		printf("sleep/gettime(CLOCK_MONOTONIC): %.09f\n", ts.tv_sec + ts.tv_nsec / 1000000000.0);
 	}
+
+	ts.tv_sec = ts.tv_nsec = 0;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	printf("sleep/gettime(CLOCK_REALTIME): %.09f\n", ts.tv_sec + ts.tv_nsec / 1000000000.0);
+
+	{
+		unsigned long long buf = 0;
+		getrandom(&buf, sizeof(buf), 0);
+		printf("getrandom %llx\n", buf);
+	}
+
+	{
+		unsigned long long buf = 0;
+		getentropy(&buf, sizeof(buf));
+		printf("getentropy %llx\n", buf);
+	}
+
+	do {
+		struct tm tm { };
+		/* 2019-05-27 12:30 */
+		tm.tm_sec  = 0;
+		tm.tm_min  = 30;
+		tm.tm_hour = 12;
+		tm.tm_mday = 27;
+		tm.tm_mon  = 4;
+		tm.tm_year = 119;
+
+		time_t t1 = mktime(&tm);
+		if (t1 == (time_t) -1) {
+			++error_count;
+			long long v1 = t1;
+			printf("Check mktime failed: %lld\n", v1);
+			break;
+		}
+		struct tm *tm_gmt = gmtime(&t1);
+		time_t t2 = mktime(tm_gmt);
+		if (t1 != t2) {
+			++error_count;
+			long long v1 = t1, v2 = t2;
+			printf("Check mktime failed: %lld != %lld\n", v1, v2);
+			break;
+		}
+
+		puts("Check mktime: success");
+	} while (0);
 
 	exit(error_count);
 }

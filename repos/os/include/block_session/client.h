@@ -23,9 +23,11 @@ namespace Block { class Session_client; }
 
 class Block::Session_client : public Genode::Rpc_client<Session>
 {
-	private:
+	protected:
 
 		Packet_stream_tx::Client<Tx> _tx;
+
+		Info const _info = info();
 
 	public:
 
@@ -49,26 +51,20 @@ class Block::Session_client : public Genode::Rpc_client<Session>
 		 ** Block session interface **
 		 *****************************/
 
-		void info(sector_t *blk_count, Genode::size_t *blk_size,
-		          Operations *ops) override
-		{
-			call<Rpc_info>(blk_count, blk_size, ops);
-		}
+		Info info() const override { return call<Rpc_info>(); }
 
 		Tx *tx_channel() override { return &_tx; }
 
 		Tx::Source *tx() override { return _tx.source(); }
 
-		void sync() override { call<Rpc_sync>(); }
-
 		Genode::Capability<Tx> tx_cap() override { return call<Rpc_tx_cap>(); }
 
-		/*
-		 * Wrapper for alloc_packet, allocates 2KB aligned packets
+		/**
+		 * Allocate packet respecting the server's alignment constraints
 		 */
-		Packet_descriptor dma_alloc_packet(Genode::size_t size)
+		Packet_descriptor alloc_packet(Genode::size_t size)
 		{
-			return tx()->alloc_packet(size, 11);
+			return tx()->alloc_packet(size, _info.align_log2);
 		}
 };
 

@@ -18,12 +18,11 @@ extern void sanitizer_init(Genode::Env &);
 
 void Component::construct(Genode::Env &env)
 {
-	env.exec_static_constructors();
 	sanitizer_init(env);
 
 	/* test array out-of-bounds access detection */
 
-	int array[1];
+	int array[1] = { 0 };
 	int volatile i = 2;
 	Genode::log("array[", i, "] = ", array[i]);
 

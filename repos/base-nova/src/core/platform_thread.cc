@@ -297,19 +297,19 @@ const char * Platform_thread::pd_name() const {
 	return _pd ? _pd->name() : "unknown"; }
 
 
-unsigned long long Platform_thread::execution_time() const
+Trace::Execution_time Platform_thread::execution_time() const
 {
 	unsigned long long time = 0;
 
 	/* for ECs without a SC we simply return 0 */
 	if (!sc_created())
-		return time;
+		return { time, time, Nova::Qpd::DEFAULT_QUANTUM, _priority };
 
 	uint8_t res = Nova::sc_ctrl(_sel_sc(), time);
 	if (res != Nova::NOVA_OK)
 		warning("sc_ctrl failed res=", res);
 
-	return time;
+	return { time, time, Nova::Qpd::DEFAULT_QUANTUM, _priority };
 }
 
 
@@ -343,19 +343,9 @@ Platform_thread::Platform_thread(size_t, const char *name, unsigned prio,
 	_pd(0), _pager(0), _id_base(cap_map().insert(2)),
 	_sel_exc_base(Native_thread::INVALID_INDEX), _location(affinity),
 	_features(0),
-	_priority(Cpu_session::scale_priority(Nova::Qpd::DEFAULT_PRIORITY, prio)),
+	_priority(scale_priority(prio, name)),
 	_name(name)
-{
-	if (_priority == 0) {
-		warning("priority of thread '", _name, "' below minimum - boost to 1");
-		_priority = 1;
-	}
-	if (_priority > Nova::Qpd::DEFAULT_PRIORITY) {
-		warning("priority of thread '", _name, "' above maximum - limit to ",
-		        (unsigned)Nova::Qpd::DEFAULT_PRIORITY);
-		_priority = Nova::Qpd::DEFAULT_PRIORITY;
-	}
-}
+{ }
 
 
 Platform_thread::~Platform_thread()

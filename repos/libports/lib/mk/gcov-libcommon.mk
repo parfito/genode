@@ -5,6 +5,7 @@ GCOV_DIR := $(GCOV_PORT_DIR)/src/gcov
 SRC_CC = diagnostic.cc \
          diagnostic-color.cc \
          diagnostic-show-locus.cc \
+         edit-context.cc \
          ggc-none.cc \
          hash-table.cc \
          input.cc \
@@ -30,6 +31,10 @@ INC_DIR += $(GCOV_DIR)/include \
 
 ifeq ($(filter-out $(SPECS),arm),)
 	INC_DIR += $(GCOV_PORT_DIR)/include/arm/gcc
+endif
+
+ifeq ($(filter-out $(SPECS),arm_64),)
+	INC_DIR += $(GCOV_PORT_DIR)/include/arm_64/gcc
 endif
 
 ifeq ($(filter-out $(SPECS),x86_32),)

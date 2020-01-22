@@ -12,12 +12,13 @@
  */
 
 /* Genode */
+#include <base/attached_rom_dataspace.h>
 #include <base/log.h>
 #include <base/thread.h>
 #include <cpu_session/connection.h>
 
 /* Genode libc pthread binding */
-#include <thread_create.h>
+#include <internal/thread_create.h>
 
 #include "sup.h"
 #include "vmm.h"
@@ -31,7 +32,31 @@
 /* vbox */
 #include <internal/thread.h>
 
-static Genode::Cpu_connection * cpu_connection(RTTHREADTYPE type) {
+static bool use_priorities()
+{
+	Genode::Attached_rom_dataspace const platform(genode_env(), "platform_info");
+	Genode::Xml_node const kernel = platform.xml().sub_node("kernel");
+	return kernel.attribute_value("name", Genode::String<16>("unknown")) == "nova";
+}
+
+static long prio_class(RTTHREADTYPE const type)
+{
+	unsigned const VIRTUAL_GENODE_VBOX_LEVELS = 16;
+	static_assert (RTTHREADTYPE_END < VIRTUAL_GENODE_VBOX_LEVELS,
+	               "prio levels exceeds VIRTUAL_GENODE_VBOX_LEVELS");
+
+	/* evaluate once */
+	static bool const priorities = use_priorities();
+
+	if (!priorities)
+		return Genode::Cpu_session::DEFAULT_PRIORITY;
+
+	return (VIRTUAL_GENODE_VBOX_LEVELS - type) *
+	        Genode::Cpu_session::PRIORITY_LIMIT / VIRTUAL_GENODE_VBOX_LEVELS;
+}
+
+static Genode::Cpu_connection * cpu_connection(RTTHREADTYPE type)
+{
 	using namespace Genode;
 
 	static Cpu_connection * con[RTTHREADTYPE_END - 1];
@@ -44,18 +69,12 @@ static Genode::Cpu_connection * cpu_connection(RTTHREADTYPE type) {
 	if (con[type - 1])
 		return con[type - 1];
 
-	unsigned const VIRTUAL_GENODE_VBOX_LEVELS = 16;
-	static_assert (RTTHREADTYPE_END < VIRTUAL_GENODE_VBOX_LEVELS,
-	               "prio levels exceeds VIRTUAL_GENODE_VBOX_LEVELS");
-
-	long const prio = (VIRTUAL_GENODE_VBOX_LEVELS - type) *
-	                  Cpu_session::PRIORITY_LIMIT / VIRTUAL_GENODE_VBOX_LEVELS;
-
 	char * data = new (vmm_heap()) char[16];
 
 	Genode::snprintf(data, 16, "vbox %u", type);
 
-	con[type - 1] = new (vmm_heap()) Cpu_connection(genode_env(), data, prio);
+	con[type - 1] = new (vmm_heap()) Cpu_connection(genode_env(), data,
+	                                                prio_class(type));
 
 	return con[type - 1];
 }
@@ -90,7 +109,8 @@ static int create_thread(pthread_t *thread, const pthread_attr_t *attr,
 		Genode::Affinity::Location location(space.location_of_index(cpu_id));
 
 		if (create_emt_vcpu(thread, stack_size, start_routine, arg,
-		                    cpu_session, location, cpu_id, rtthread->szName))
+		                    cpu_session, location, cpu_id, rtthread->szName,
+		                    prio_class(rtthread->enmType)))
 			return 0;
 		/*
 		 * The virtualization layer had no need to setup the EMT
@@ -98,9 +118,15 @@ static int create_thread(pthread_t *thread, const pthread_attr_t *attr,
 		 */
 	}
 
+	/*
+	 * Make sure timers run at the same priority as component threads, otherwise
+	 * no timer progress can be made. See 'rtTimeNanoTSInternalRef' (timesupref.h)
+	 * and 'rtTimerLRThread' (timerlr-generic.cpp)
+	 */
+	bool const rtthread_timer = rtthread->enmType == RTTHREADTYPE_TIMER;
 	return Libc::pthread_create(thread, start_routine, arg,
 	                            stack_size, rtthread->szName,
-	                            cpu_connection(rtthread->enmType),
+	                            rtthread_timer ? nullptr : cpu_connection(rtthread->enmType),
 	                            Genode::Affinity::Location());
 }
 
@@ -118,6 +144,10 @@ extern "C" int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 			log("Upgrading memory for creation of "
 			    "thread '", Cstring(rtthread->szName), "'");
 			cpu_connection(rtthread->enmType)->upgrade_ram(4096);
+		} catch (Genode::Signal_receiver::Signal_not_pending) {
+			error("signal not pending ?");
+		} catch (Out_of_caps) {
+			error("out of caps ...");
 		}
 		catch (...) { break; }
 	}

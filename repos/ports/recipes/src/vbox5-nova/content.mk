@@ -35,15 +35,14 @@ $(MIRROR_FROM_PORT_DIR):
 
 MIRROR_FROM_LIBPORTS := lib/mk/libc_pipe.mk \
                         src/lib/libc_pipe \
-                        lib/mk/libc_terminal.mk \
-                        src/lib/libc_terminal \
                         lib/mk/libc-mem.mk \
                         lib/mk/libc-common.inc \
                         src/lib/libc/libc_mem_alloc.cc \
-                        src/lib/libc/libc_mem_alloc.h \
-                        src/lib/libc/libc_init.h \
-                        src/lib/libc/thread_create.h \
-                        src/lib/libc/thread.h \
+                        src/lib/libc/internal/mem_alloc.h \
+                        src/lib/libc/internal/init.h \
+                        src/lib/libc/internal/thread_create.h \
+                        src/lib/libc/internal/pthread.h \
+                        src/lib/libc/internal/types.h \
                         include/libc-plugin \
                         lib/import/import-qemu-usb_include.mk \
                         lib/mk/qemu-usb_include.mk \

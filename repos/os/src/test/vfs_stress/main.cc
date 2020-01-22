@@ -239,6 +239,7 @@ struct Populate_test : public Stress_test
 			path.base()[path_len] = '\0';
 			path.append("a");
 			populate(depth);
+			[[fallthrough]];
 
 		case 'b':
 			path.base()[path_len] = '\0';
@@ -311,6 +312,7 @@ struct Write_test : public Stress_test
 			path.base()[path_len] = '\0';
 			path.append("a");
 			write(depth);
+			[[fallthrough]];
 
 		case 'b':
 			path.base()[path_len] = '\0';
@@ -392,6 +394,7 @@ struct Read_test : public Stress_test
 			path.base()[path_len] = '\0';
 			path.append("a");
 			read(depth);
+			[[fallthrough]];
 
 		case 'b':
 			path.base()[path_len] = '\0';
@@ -442,7 +445,7 @@ struct Unlink_test : public Stress_test
 		Vfs::Vfs_handle *dir_handle;
 		assert_opendir(vfs.opendir(path, false, &dir_handle, alloc));
 
-		Vfs::Directory_service::Dirent dirent;
+		Vfs::Directory_service::Dirent dirent { };
 		for (Vfs::file_size i = vfs.num_dirent(path); i;) {
 			dir_handle->seek(--i * sizeof(dirent));
 			dir_handle->fs().queue_read(dir_handle, sizeof(dirent));
@@ -453,14 +456,15 @@ struct Unlink_test : public Stress_test
 			       Vfs::File_io_service::READ_QUEUED)
 				_ep.wait_and_dispatch_one_io_signal();
 
-			subpath.append(dirent.name);
+			subpath.append(dirent.name.buf);
 			switch (dirent.type) {
-			case Vfs::Directory_service::DIRENT_TYPE_END:
+			case Vfs::Directory_service::Dirent_type::END:
 				error("reached the end prematurely");
 				throw Exception();
 
-			case Vfs::Directory_service::DIRENT_TYPE_DIRECTORY:
+			case Vfs::Directory_service::Dirent_type::DIRECTORY:
 				empty_dir(subpath.base());
+				[[fallthrough]];
 
 			default:
 				try {
@@ -489,6 +493,7 @@ struct Unlink_test : public Stress_test
 				log("recursive unlink not supported");
 				empty_dir(path.base());
 				r = vfs.unlink(path.base());
+				[[fallthrough]];
 
 			case Result::UNLINK_OK:
 				log("recursive unlink supported");
@@ -541,7 +546,7 @@ void Component::construct(Genode::Env &env)
 
 	MAX_DEPTH = config_xml.attribute_value("depth", 16U);
 
-	unsigned long elapsed_ms;
+	uint64_t elapsed_ms;
 	Timer::Connection timer(env);
 
 	/* populate the directory file system at / */

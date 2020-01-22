@@ -1,11 +1,12 @@
 /*
  * \brief  QNitpickerPlatformWindow
  * \author Christian Prochaska
+ * \author Christian Helmuth
  * \date   2013-05-08
  */
 
 /*
- * Copyright (C) 2013-2017 Genode Labs GmbH
+ * Copyright (C) 2013-2019 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -25,7 +26,6 @@
 /* Qt includes */
 #include <qpa/qplatformwindow.h>
 #include <qpa/qwindowsysteminterface.h>
-#include <QtInputSupport/private/qevdevkeyboardhandler_p.h>
 #include <qtouchdevice.h>
 
 /* Qoost includes */
@@ -66,6 +66,23 @@ class QNitpickerPlatformWindow : public QObject, public QPlatformWindow
 			              _mouse_position.y() - geometry().y());
 		}
 
+
+		typedef Genode::Codepoint Codepoint;
+
+		struct Mapped_key
+		{
+			enum Event { PRESSED, RELEASED, REPEAT };
+
+			Qt::Key   key       { Qt::Key_unknown };
+			Codepoint codepoint { Codepoint::INVALID };
+		};
+
+		QHash<Input::Keycode, Qt::Key> _pressed;
+
+		Mapped_key _map_key(Input::Keycode, Codepoint, Mapped_key::Event);
+		void _key_event(Input::Keycode, Codepoint, Mapped_key::Event);
+		void _mouse_button_event(Input::Keycode, bool press);
+
 		Genode::Signal_handler<QNitpickerPlatformWindow> _input_signal_handler;
 		Genode::Signal_handler<QNitpickerPlatformWindow> _mode_changed_signal_handler;
 
@@ -98,75 +115,69 @@ class QNitpickerPlatformWindow : public QObject, public QPlatformWindow
 
 		~QNitpickerPlatformWindow();
 
-	    QWindow *window() const;
+	    QSurfaceFormat format() const override;
 
-	    QPlatformWindow *parent() const;
+	    void setGeometry(const QRect &rect) override;
 
-	    QPlatformScreen *screen() const;
+	    QRect geometry() const override;
 
-	    QSurfaceFormat format() const;
+	    QMargins frameMargins() const override;
 
-	    void setGeometry(const QRect &rect);
+	    void setVisible(bool visible) override;
 
-	    QRect geometry() const;
+	    void setWindowFlags(Qt::WindowFlags flags) override;
 
-	    QMargins frameMargins() const;
+	    void setWindowState(Qt::WindowStates state) override;
 
-	    void setVisible(bool visible);
+	    WId winId() const override;
 
-	    void setWindowFlags(Qt::WindowFlags flags);
+	    void setParent(const QPlatformWindow *window) override;
 
-	    void setWindowState(Qt::WindowState state);
+	    void setWindowTitle(const QString &title) override;
 
-	    WId winId() const;
+	    void setWindowFilePath(const QString &title) override;
 
-	    void setParent(const QPlatformWindow *window);
+	    void setWindowIcon(const QIcon &icon) override;
 
-	    void setWindowTitle(const QString &title);
+	    void raise() override;
 
-	    void setWindowFilePath(const QString &title);
+	    void lower() override;
 
-	    void setWindowIcon(const QIcon &icon);
+	    bool isExposed() const override;
 
-	    void raise();
+	    bool isActive() const override;
 
-	    void lower();
+	    bool isEmbedded() const override;
 
-	    bool isExposed() const;
+	    QPoint mapToGlobal(const QPoint &pos) const override;
 
-	    bool isActive() const;
+	    QPoint mapFromGlobal(const QPoint &pos) const override;
 
-	    bool isEmbedded(const QPlatformWindow *parentWindow) const;
+	    void propagateSizeHints() override;
 
-	    QPoint mapToGlobal(const QPoint &pos) const;
+	    void setOpacity(qreal level) override;
 
-	    QPoint mapFromGlobal(const QPoint &pos) const;
+	    void setMask(const QRegion &region) override;
 
-	    void propagateSizeHints();
+	    void requestActivateWindow() override;
 
-	    void setOpacity(qreal level);
+	    void handleContentOrientationChange(Qt::ScreenOrientation orientation) override;
 
-	    void setMask(const QRegion &region);
+	    qreal devicePixelRatio() const override;
 
-	    void requestActivateWindow();
+	    bool setKeyboardGrabEnabled(bool grab) override;
 
-	    void handleContentOrientationChange(Qt::ScreenOrientation orientation);
+	    bool setMouseGrabEnabled(bool grab) override;
 
-	    qreal devicePixelRatio() const;
+	    bool setWindowModified(bool modified) override;
 
-	    bool setKeyboardGrabEnabled(bool grab);
+	    bool windowEvent(QEvent *event) override;
 
-	    bool setMouseGrabEnabled(bool grab);
+	    bool startSystemResize(const QPoint &pos, Qt::Corner corner) override;
 
-	    bool setWindowModified(bool modified);
+	    void setFrameStrutEventsEnabled(bool enabled) override;
 
-	    void windowEvent(QEvent *event);
-
-	    bool startSystemResize(const QPoint &pos, Qt::Corner corner);
-
-	    void setFrameStrutEventsEnabled(bool enabled);
-
-	    bool frameStrutEventsEnabled() const;
+	    bool frameStrutEventsEnabled() const override;
 
 
 	    /* for QNitpickerWindowSurface */

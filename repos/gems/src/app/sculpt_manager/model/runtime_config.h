@@ -315,6 +315,7 @@ class Sculpt::Runtime_config
 			Parent_service const
 				_focus     { _r, Type::NITPICKER,   "keyboard focus",                 "focus" },
 				_backdrop  { _r, Type::NITPICKER,   "desktop background",             "backdrop" },
+				_lockscreen{ _r, Type::NITPICKER,   "desktop lock screen",            "lock_screen" },
 				_nitpicker { _r, Type::NITPICKER,   "system GUI server" },
 				_config_fs { _r, Type::FILE_SYSTEM, "writeable system configuration", "config" },
 				_report_fs { _r, Type::FILE_SYSTEM, "read-only system reports",       "report" },
@@ -324,6 +325,9 @@ class Sculpt::Runtime_config
 				_pf_info   { _r, Type::ROM,         "platform information",           "platform_info" },
 				_system    { _r, Type::ROM,         "system status",                  "config -> system" },
 				_report    { _r, Type::REPORT,      "system reports" },
+				_shape     { _r, Type::REPORT,      "pointer shape",    "shape",     Service::Match_label::LAST },
+				_copy      { _r, Type::REPORT,      "global clipboard", "clipboard", Service::Match_label::LAST },
+				_paste     { _r, Type::ROM,         "global clipboard", "clipboard", Service::Match_label::LAST },
 				_rm        { _r, Type::RM,          "custom virtual memory objects" },
 				_io_mem    { _r, Type::IO_MEM,      "raw hardware access" },
 				_io_port   { _r, Type::IO_PORT,     "raw hardware access" },

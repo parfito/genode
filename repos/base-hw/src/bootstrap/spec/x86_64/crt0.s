@@ -152,10 +152,26 @@ __gdt:
 	inc  %rcx
 	mulq %rcx
 	movq %rax, %rcx
-	subq $8, %rcx
 	leaq __bootstrap_stack@GOTPCREL(%rip),%rax
 	movq (%rax), %rsp
 	addq %rcx, %rsp
+
+	/*
+	 * Enable paging and FPU:
+	 * PE, MP, NE, WP, PG
+	 */
+	mov $0x80010023, %rax
+	mov %rax, %cr0
+
+	/*
+	 * OSFXSR and OSXMMEXCPT for SSE FPU support
+	 */
+	mov %cr4, %rax
+	bts $9,   %rax
+	bts $10,  %rax
+	mov %rax, %cr4
+
+	fninit
 
 	/* kernel-initialization */
 	call init

@@ -386,7 +386,7 @@ void Platform::_init_rom_modules()
 		addr_t const boot_info_extra = boot_info_page + 4096;
 
 		seL4_BootInfoHeader const * element   = reinterpret_cast<seL4_BootInfoHeader *>(boot_info_extra);
-		seL4_BootInfoHeader const * const last = reinterpret_cast<seL4_BootInfoHeader const * const>(boot_info_extra + bi.extraLen);
+		seL4_BootInfoHeader const * const last = reinterpret_cast<seL4_BootInfoHeader const *>(boot_info_extra + bi.extraLen);
 
 		for (seL4_BootInfoHeader const *next = nullptr;
 		     (next = reinterpret_cast<seL4_BootInfoHeader const *>(reinterpret_cast<addr_t>(element) + element->len)) &&
@@ -404,10 +404,14 @@ void Platform::_init_rom_modules()
 
 				tsc_freq const * boot_freq = reinterpret_cast<tsc_freq const *>(reinterpret_cast<addr_t>(element) + sizeof(* element));
 
+				xml.node("kernel", [&] () { xml.attribute("name", "sel4"); });
 				xml.node("hardware", [&] () {
 					xml.node("features", [&] () {
-						xml.attribute("svm", false);
+						#ifdef CONFIG_VTX
+						xml.attribute("vmx", true);
+						#else
 						xml.attribute("vmx", false);
+						#endif
 					});
 					xml.node("tsc", [&] () {
 						xml.attribute("freq_khz" , boot_freq->freq_mhz * 1000UL);
@@ -583,9 +587,10 @@ Platform::Platform()
 
 				seL4_BenchmarkGetThreadUtilisation(tcb_sel.value());
 				uint64_t execution_time = buf[BENCHMARK_IDLE_TCBCPU_UTILISATION];
+				uint64_t sc_time = 0; /* not supported */
 
 				return { Session_label("kernel"), Trace::Thread_name("idle"),
-				         Trace::Execution_time(execution_time), affinity };
+				         Trace::Execution_time(execution_time, sc_time), affinity };
 			}
 
 			Idle_trace_source(Trace::Source_registry &registry,

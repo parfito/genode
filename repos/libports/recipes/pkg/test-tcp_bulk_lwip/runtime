@@ -14,7 +14,6 @@
 		<rom label="posix.lib.so"/>
 		<rom label="vfs.lib.so"/>
 		<rom label="vfs_lwip.lib.so"/>
-		<rom label="lwip.lib.so"/>
 		<rom label="nic_bridge"/>
 		<rom label="nic_loopback"/>
 		<rom label="test-tcp"/>
@@ -23,9 +22,6 @@
 	<config verbose="yes">
 		<parent-provides>
 			<service name="ROM"/>
-			<service name="IRQ"/>
-			<service name="IO_MEM"/>
-			<service name="IO_PORT"/>
 			<service name="PD"/>
 			<service name="RM"/>
 			<service name="CPU"/>

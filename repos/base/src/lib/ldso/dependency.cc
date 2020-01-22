@@ -35,6 +35,9 @@ Linker::Dependency::Dependency(Env &env, Allocator &md_alloc,
 
 Linker::Dependency::~Dependency()
 {
+	if (!_unload_on_destruct)
+		return;
+
 	if (!_obj.unload())
 		return;
 
@@ -58,18 +61,31 @@ bool Linker::Dependency::in_dep(char const *file, Fifo<Dependency> const &dep)
 }
 
 
+void Linker::Dependency::_load(Env &env, Allocator &alloc, char const *path,
+                               Fifo<Dependency> &deps, Keep keep)
+{
+	if (!in_dep(Linker::file(path), deps))
+		new (alloc) Dependency(env, alloc, path, _root, deps, keep);
+
+	/* re-order initializer list, if needed object has been already added */
+	else if (Object *o = Init::list()->contains(Linker::file(path)))
+		Init::list()->reorder(o);
+}
+
+
+void Linker::Dependency::preload(Env &env, Allocator &alloc,
+                                 Fifo<Dependency> &deps, Config const &config)
+{
+	config.for_each_library([&] (Config::Rom_name const &rom, Keep keep) {
+		_load(env, alloc, rom.string(), deps, keep); });
+}
+
+
 void Linker::Dependency::load_needed(Env &env, Allocator &md_alloc,
                                      Fifo<Dependency> &deps, Keep keep)
 {
 	_obj.dynamic().for_each_dependency([&] (char const *path) {
-
-		if (!in_dep(Linker::file(path), deps))
-			new (md_alloc) Dependency(env, md_alloc, path, _root, deps, keep);
-
-		/* re-order initializer list, if needed object has been already added */
-		else if (Object *o = Init::list()->contains(Linker::file(path)))
-			Init::list()->reorder(o);
-	});
+		_load(env, md_alloc, path, deps, keep); });
 }
 
 
@@ -95,7 +111,7 @@ Linker::Root_object::Root_object(Env &env, Allocator &md_alloc,
 
 	/* relocate and call constructors */
 	try {
-		Init::list()->initialize(bind, STAGE_SO);
+		Init::list()->initialize(bind, Linker::stage);
 	} catch (...) {
 		Init::list()->flush();
 		_deps.dequeue_all([&] (Dependency &d) {

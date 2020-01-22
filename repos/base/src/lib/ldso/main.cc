@@ -28,6 +28,7 @@
 #include <dynamic.h>
 #include <init.h>
 #include <region_map.h>
+#include <config.h>
 
 using namespace Linker;
 
@@ -43,6 +44,7 @@ namespace Linker {
 
 static    Binary *binary_ptr = nullptr;
 bool      Linker::verbose  = false;
+Stage     Linker::stage    = STAGE_BINARY;
 Link_map *Link_map::first;
 
 /**
@@ -83,10 +85,10 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 
 		friend class Fifo<Elf_object>;
 
-		Link_map       _map       { };
-		unsigned       _ref_count { 1 };
-		unsigned const _keep      { KEEP };
-		bool           _relocated { false };
+		Link_map _map       { };
+		unsigned _ref_count { 1 };
+		Keep     _keep      { KEEP };
+		bool     _relocated { false };
 
 		/*
 		 * Optional ELF file, skipped for initial 'Ld' initialization
@@ -102,7 +104,7 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 
 		bool _init_elf_file(Env &env, Allocator &md_alloc, char const *path)
 		{
-			_elf_file.construct(env, md_alloc, Linker::file(path), true);
+			_elf_file.construct(env, md_alloc, path, true);
 			Object::init(Linker::file(path), *_elf_file);
 			return true;
 		}
@@ -152,6 +154,7 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 
 			/* remove from loaded objects list */
 			obj_list()->remove(*this);
+			Init::list()->remove(this);
 		}
 
 		/**
@@ -189,6 +192,13 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 
 			Link_map::add(&_map);
 		};
+
+		void link_map_make_first()
+		{
+			Link_map::make_first(&_map);
+		}
+
+		void force_keep() { _keep = KEEP; }
 
 		Link_map const &link_map() const override { return _map; }
 		Dynamic  const &dynamic()  const override { return _dyn; }
@@ -240,6 +250,8 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 		void load()   override { _ref_count++; }
 		bool unload() override { return (_keep == DONT_KEEP) && !(--_ref_count); }
 
+		bool keep() const override { return _keep == KEEP; }
+
 		bool is_linker() const override { return false; }
 		bool is_binary() const override { return false; }
 };
@@ -270,6 +282,8 @@ struct Linker::Ld : private Dependency, Elf_object
 	static Ld &linker();
 
 	bool is_linker() const override { return true; }
+
+	bool keep() const override { return true; }
 
 	/**
 	 * Entry point for jump relocations, it is called from assembly code and is implemented
@@ -344,13 +358,16 @@ struct Linker::Binary : private Root_object, public Elf_object
 {
 	using Root_object::first_dep;
 
+	bool const _check_ctors;
+
 	bool static_construction_finished = false;
 
-	Binary(Env &env, Allocator &md_alloc, Bind bind)
+	Binary(Env &env, Allocator &md_alloc, Config const &config, char const *name)
 	:
 		Root_object(md_alloc),
-		Elf_object(env, md_alloc, binary_name(),
-		           *new (md_alloc) Dependency(*this, this), KEEP)
+		Elf_object(env, md_alloc, name,
+		           *new (md_alloc) Dependency(*this, this), DONT_KEEP),
+		_check_ctors(config.check_ctors())
 	{
 		/* create dep for binary and linker */
 		Dependency *binary = const_cast<Dependency *>(&dynamic().dep());
@@ -363,11 +380,14 @@ struct Linker::Binary : private Root_object, public Elf_object
 		/* place linker on second place in link map */
 		Ld::linker().setup_link_map();
 
+		/* preload libraries specified in the configuration */
+		binary->preload(env, md_alloc, deps(), config);
+
 		/* load dependencies */
 		binary->load_needed(env, md_alloc, deps(), DONT_KEEP);
 
 		/* relocate and call constructors */
-		Init::list()->initialize(bind, STAGE_BINARY);
+		Init::list()->initialize(config.bind(), STAGE_BINARY);
 	}
 
 	Elf::Addr lookup_symbol(char const *name)
@@ -391,7 +411,7 @@ struct Linker::Binary : private Root_object, public Elf_object
 	{
 		Init::list()->exec_static_constructors();
 
-		/* call static construtors and register destructors */
+		/* call static constructors and register destructors */
 		Func * const ctors_start = (Func *)lookup_symbol("_ctors_start");
 		Func * const ctors_end   = (Func *)lookup_symbol("_ctors_end");
 		for (Func * ctor = ctors_end; ctor != ctors_start; (*--ctor)());
@@ -401,6 +421,7 @@ struct Linker::Binary : private Root_object, public Elf_object
 		for (Func * dtor = dtors_start; dtor != dtors_end; genode_atexit(*dtor++));
 
 		static_construction_finished = true;
+		stage = STAGE_SO;
 	}
 
 	void call_entry_point(Env &env)
@@ -419,12 +440,14 @@ struct Linker::Binary : private Root_object, public Elf_object
 		if (Elf::Addr addr = lookup_symbol("_ZN9Component9constructERN6Genode3EnvE")) {
 			((void(*)(Env &))addr)(env);
 
-			if (static_construction_pending()) {
+			if (_check_ctors && static_construction_pending()) {
 				error("Component::construct() returned without executing "
 				      "pending static constructors (fix by calling "
 				      "Genode::Env::exec_static_constructors())");
 				throw Fatal();
 			}
+
+			stage = STAGE_SO;
 			return;
 		}
 
@@ -618,6 +641,9 @@ Elf::Sym const *Linker::lookup_symbol(char const *name, Dependency const &dep,
  */
 extern "C" void init_rtld()
 {
+	/* init cxa guard mechanism before any local static variables are used */
+	init_cxx_guard();
+
 	/*
 	 * Allocate on stack, since the linker has not been relocated yet, the vtable
 	 * type relocation might produce a wrong vtable pointer (at least on ARM), do
@@ -634,32 +660,6 @@ extern "C" void init_rtld()
 }
 
 
-class Linker::Config
-{
-	private:
-
-		Bind _bind    = BIND_LAZY;
-		bool _verbose = false;
-
-	public:
-
-		Config(Env &env)
-		{
-			try {
-				Attached_rom_dataspace config(env, "config");
-
-				if (config.xml().attribute_value("ld_bind_now", false))
-					_bind = BIND_NOW;
-
-				_verbose = config.xml().attribute_value("ld_verbose", false);
-			} catch (Rom_connection::Rom_connection_failed) { }
-		}
-
-		Bind bind()    const { return _bind; }
-		bool verbose() const { return _verbose; }
-};
-
-
 static Genode::Constructible<Heap> &heap()
 {
 	return *unmanaged_singleton<Constructible<Heap>>();
@@ -668,7 +668,19 @@ static Genode::Constructible<Heap> &heap()
 
 void Genode::init_ldso_phdr(Env &env)
 {
-	heap().construct(env.ram(), env.rm());
+	/*
+	 * Use a statically allocated initial block to make the first dynamic
+	 * allocations deterministic. This assumption is required by the libc's
+	 * fork mechanism on Linux. Without the initial block, the Linux kernel
+	 * would attach the heap's backing-store dataspaces to differently
+	 * randomized addresses in the new process. The binary's GOT (containing
+	 * pointers to the linker's heap-allocated objects) of the new process,
+	 * however, is copied from the parent process. So the pointed-to objects
+	 * must reside on the same addresses in the parent and child.
+	 */
+	static char initial_block[8*1024];
+	heap().construct(&env.ram(), &env.rm(), Heap::UNLIMITED,
+	                 initial_block, sizeof(initial_block));
 
 	/* load program headers of linker now */
 	if (!Ld::linker().file())
@@ -677,23 +689,75 @@ void Genode::init_ldso_phdr(Env &env)
 
 void Genode::exec_static_constructors()
 {
-	if (!binary_ptr->static_construction_pending())
-		warning("Don't call Genode::Env::exec_static_constructors() "
-		        "in components without static globals");
-
 	binary_ptr->finish_static_construction();
+}
+
+
+void Genode::Dynamic_linker::_for_each_loaded_object(Env &, For_each_fn const &fn)
+{
+	Elf_object::obj_list()->for_each([&] (Object const &obj) {
+
+		Elf_file const *elf_file_ptr =
+			obj.file() ? dynamic_cast<Elf_file const *>(obj.file()) : nullptr;
+
+		if (!elf_file_ptr)
+			return;
+
+		elf_file_ptr->with_rw_phdr([&] (Elf::Phdr const &phdr) {
+
+			Object_info info { .name     = obj.name(),
+			                   .ds_cap   = elf_file_ptr->rom_cap,
+			                   .rw_start = (void *)(obj.reloc_base() + phdr.p_vaddr),
+			                   .rw_size  = phdr.p_memsz };
+
+			fn.supply_object_info(info);
+		});
+	});
+}
+
+
+void Dynamic_linker::keep(Env &, char const *binary)
+{
+	Elf_object::obj_list()->for_each([&] (Elf_object &obj) {
+		if (Object::Name(binary) == obj.name())
+			obj.force_keep(); });
+}
+
+
+void *Dynamic_linker::_respawn(Env &env, char const *binary, char const *entry_name)
+{
+	Object::Name const name(binary);
+
+	/* unload original binary */
+	binary_ptr->~Binary();
+
+	Config const config(env);
+
+	/* load new binary */
+	construct_at<Binary>(binary_ptr, env, *heap(), config, name.string());
+
+	/* move to front of link map */
+	binary_ptr->link_map_make_first();
+
+	try {
+		return (void *)binary_ptr->lookup_symbol(entry_name);
+	}
+	catch (...) { }
+
+	throw Dynamic_linker::Invalid_symbol();
 }
 
 
 void Component::construct(Genode::Env &env)
 {
 	/* read configuration */
-	static Config config(env);
+	Config const config(env);
+
 	verbose = config.verbose();
 
 	/* load binary and all dependencies */
 	try {
-		binary_ptr = unmanaged_singleton<Binary>(env, *heap(), config.bind());
+		binary_ptr = unmanaged_singleton<Binary>(env, *heap(), config, binary_name());
 	} catch(Linker::Not_found &symbol) {
 		error("LD: symbol not found: '", symbol, "'");
 		throw;

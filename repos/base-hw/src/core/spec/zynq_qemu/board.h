@@ -16,24 +16,14 @@
 #ifndef _CORE__SPEC__ZYNQ_QEMU__BOARD_H_
 #define _CORE__SPEC__ZYNQ_QEMU__BOARD_H_
 
-/* base includes */
-#include <drivers/defs/zynq_qemu.h>
-#include <drivers/uart/xilinx.h>
-
-#include <hw/spec/arm/cortex_a9.h>
-#include <hw/spec/arm/pl310.h>
+#include <hw/spec/arm/gicv2.h>
+#include <hw/spec/arm/zynq_qemu_board.h>
+#include <spec/arm/cortex_a9_private_timer.h>
 
 namespace Board {
-	using namespace Zynq_qemu;
-	using Cpu_mmio = Hw::Cortex_a9_mmio<CORTEX_A9_PRIVATE_MEM_BASE>;
-	using L2_cache = Hw::Pl310;
-	using Serial   = Genode::Xilinx_uart;
+	using namespace Hw::Zynq_qemu_board;
 
-	enum {
-		UART_BASE  = UART_0_MMIO_BASE,
-	};
-
-	static constexpr bool SMP = true;
+	using Pic = Hw::Gicv2;
 
 	L2_cache & l2_cache();
 }

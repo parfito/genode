@@ -33,13 +33,19 @@ namespace Genode { extern Region_map * env_stack_area_region_map; }
 
 void prepare_init_main_thread();
 
-enum { MAIN_THREAD_STACK_SIZE = 1024*sizeof(Genode::addr_t) };
+enum { MAIN_THREAD_STACK_SIZE = 16*1024 };
+
 
 /**
  * Satisfy crt0.s in static programs, LDSO overrides this symbol
  */
 extern "C" void init_rtld() __attribute__((weak));
-void init_rtld() { }
+void init_rtld()
+{
+	/* init cxa guard mechanism before any local static variables are used */
+	init_cxx_guard();
+}
+
 
 /**
  * Lower bound of the stack, solely used for sanity checking

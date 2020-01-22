@@ -264,7 +264,7 @@ struct Test::Main : Input_from_filter::Event_handler
 	unsigned const _num_steps = _config.xml().num_sub_nodes();
 	unsigned       _curr_step = 0;
 
-	unsigned long _went_to_sleep_time = 0;
+	uint64_t _went_to_sleep_time = 0;
 
 	Xml_node _curr_step_xml() const { return _config.xml().sub_node(_curr_step); }
 
@@ -349,7 +349,7 @@ struct Test::Main : Input_from_filter::Event_handler
 
 			if (step.type() == "sleep") {
 				if (_went_to_sleep_time == 0) {
-					unsigned long const timeout_ms = step.attribute_value("ms", 250UL);
+					uint64_t const timeout_ms = step.attribute_value("ms", (uint64_t)250);
 					_went_to_sleep_time = _timer.elapsed_ms();
 					_timer.trigger_once(timeout_ms*1000);
 				}
@@ -375,11 +375,14 @@ struct Test::Main : Input_from_filter::Event_handler
 		ev.handle_press([&] (Input::Keycode key, Codepoint codepoint) {
 
 			auto codepoint_of_step = [] (Xml_node step) {
-				return Utf8_ptr(step.attribute_value("char", Value()).string()).codepoint(); };
+				if (step.has_attribute("codepoint"))
+					return Codepoint { step.attribute_value("codepoint", 0U) };
+				return Utf8_ptr(step.attribute_value("char", Value()).string()).codepoint();
+			};
 
 			if (step.type() == "expect_press"
 			 && step.attribute_value("code", Value()) == Input::key_name(key)
-			 && (!step.has_attribute("char") ||
+			 && ((!step.has_attribute("char") && !step.has_attribute("codepoint")) ||
 			     codepoint_of_step(step).value == codepoint.value))
 				step_succeeded = true;
 		});
@@ -420,9 +423,9 @@ struct Test::Main : Input_from_filter::Event_handler
 			throw Exception();
 		}
 
-		unsigned long const duration = _curr_step_xml().attribute_value("ms", 0UL);
-		unsigned long const now      = _timer.elapsed_ms();
-		unsigned long const slept    = now - _went_to_sleep_time;
+		uint64_t const duration = _curr_step_xml().attribute_value("ms", (uint64_t)0);
+		uint64_t const now      = _timer.elapsed_ms();
+		uint64_t const slept    = now - _went_to_sleep_time;
 
 		if (slept < duration) {
 			warning("spurious wakeup from sleep");

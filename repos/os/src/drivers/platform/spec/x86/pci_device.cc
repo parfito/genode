@@ -13,18 +13,19 @@
 #include "pci_session_component.h"
 #include "pci_device_component.h"
 
-Genode::Io_port_session_capability Platform::Device_component::io_port(Genode::uint8_t v_id)
+Genode::Io_port_session_capability Platform::Device_component::io_port(Genode::uint8_t const v_id)
 {
-	Genode::uint8_t max = sizeof(_io_port_conn) / sizeof(_io_port_conn[0]);
-	Genode::uint8_t i = 0, r_id = 0;
+	Genode::uint8_t const max = sizeof(_io_port_conn) / sizeof(_io_port_conn[0]);
+	Genode::uint8_t r_id = 0;
 
-	for (Resource res = resource(0); i < max; i++, res = resource(i))
-	{
-		if (res.type() != Resource::IO)
+	for (unsigned i = 0; i < max; ++i) {
+		Pci::Resource res = _device_config.resource(i);
+
+		if (!res.valid() || res.mem())
 			continue;
 
 		if (v_id != r_id) {
-			r_id ++;
+			++r_id;
 			continue;
 		}
 
@@ -48,15 +49,16 @@ Genode::Io_mem_session_capability Platform::Device_component::io_mem(Genode::uin
                                                                      Genode::size_t const size)
 {
 	Genode::uint8_t max = sizeof(_io_mem) / sizeof(_io_mem[0]);
-	Genode::uint8_t i = 0, r_id = 0;
+	Genode::uint8_t r_id = 0;
 
-	for (Resource res = resource(0); i < max; i++, res = resource(i))
-	{
-		if (res.type() != Resource::MEMORY)
+	for (unsigned i = 0; i < max; ++i) {
+		Pci::Resource res = _device_config.resource(i);
+
+		if (!res.valid() || !res.mem())
 			continue;
 
 		if (v_id != r_id) {
-			r_id ++;
+			++r_id;
 			continue;
 		}
 
@@ -65,6 +67,14 @@ Genode::Io_mem_session_capability Platform::Device_component::io_mem(Genode::uin
 
 		if (offset >= res.size() || offset > res.size() - res_size)
 			return Genode::Io_mem_session_capability();
+
+		/* error if MEM64 resource base address above 4G on 32-bit */
+		if (res.base() > ~(addr_t)0) {
+			Genode::error("request for MEM64 resource of ", _device_config,
+			              " at ", Genode::Hex(res.base()),
+			              " not supported on 32-bit system");
+			return Genode::Io_mem_session_capability();
+		}
 
 		try {
 			bool const wc = caching == Genode::Cache_attribute::WRITE_COMBINED;
@@ -111,10 +121,12 @@ void Platform::Device_component::config_write(unsigned char address,
 		case Device_config::PCI_CMD_REG: /* COMMAND register - first byte */
 			if (size == Access_size::ACCESS_16BIT)
 				break;
+			[[fallthrough]];
 		case Device_config::PCI_CMD_REG + 1: /* COMMAND register - second byte */
 		case 0xd: /* Latency timer */
 			if (size == Access_size::ACCESS_8BIT)
 				break;
+			[[fallthrough]];
 		default:
 			Genode::warning(_device_config, " write access to "
 			                "address=", Genode::Hex(address), " "

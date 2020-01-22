@@ -13,7 +13,7 @@
 
 #include <spec/arm/cpu.h>
 
-void Bootstrap::Cpu::enable_mmu_and_caches(Genode::addr_t table)
+void Board::Cpu::enable_mmu_and_caches(Genode::addr_t table)
 {
 	/* invalidate TLB */
 	Tlbiall::write(0);
@@ -26,13 +26,7 @@ void Bootstrap::Cpu::enable_mmu_and_caches(Genode::addr_t table)
 
 	Ttbcr::write(1);
 
-	Ttbr::access_t ttbr = Ttbr::Ba::masked(table);
-	Ttbr::Rgn::set(ttbr, Ttbr::CACHEABLE);
-	if (Mpidr::Me::get(Mpidr::read())) { /* check for SMP system */
-		Ttbr::Irgn::set(ttbr, Ttbr::CACHEABLE);
-		Ttbr::S::set(ttbr, 1);
-	} else
-		Ttbr::C::set(ttbr, 1);
+	Ttbr::access_t ttbr = Ttbr::init(table);
 	Ttbr0::write(ttbr);
 	Ttbr1::write(ttbr);
 
@@ -40,7 +34,6 @@ void Bootstrap::Cpu::enable_mmu_and_caches(Genode::addr_t table)
 	Sctlr::C::set(sctlr, 1);
 	Sctlr::I::set(sctlr, 1);
 	Sctlr::V::set(sctlr, 1);
-	Sctlr::A::set(sctlr, 0);
 	Sctlr::M::set(sctlr, 1);
 	Sctlr::Z::set(sctlr, 1);
 	Sctlr::write(sctlr);

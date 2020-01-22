@@ -17,6 +17,8 @@
 #include <base/attached_rom_dataspace.h>
 #include <os/reporter.h>
 #include <nitpicker_session/connection.h>
+#include <vm_session/vm_session.h>
+#include <timer_session/connection.h>
 
 /* included from depot_deploy tool */
 #include <children.h>
@@ -212,14 +214,15 @@ struct Sculpt::Main : Input_event_handler,
 		return _query_version;
 	}
 
-	/**
-	 * Depot_query interface
-	 */
-	void trigger_depot_query() override
-	{
-		_query_version.value++;
+	Timer::Connection _timer { _env };
 
+	Timer::One_shot_timeout<Main> _deferred_depot_query_handler {
+		_timer, *this, &Main::_handle_deferred_depot_query };
+
+	void _handle_deferred_depot_query(Duration)
+	{
 		if (_deploy._arch.valid()) {
+			_query_version.value++;
 			_depot_query_reporter.generate([&] (Xml_generator &xml) {
 				xml.attribute("arch",    _deploy._arch);
 				xml.attribute("version", _query_version.value);
@@ -230,6 +233,21 @@ struct Sculpt::Main : Input_event_handler,
 				_deploy.gen_depot_query(xml);
 			});
 		}
+	}
+
+	/**
+	 * Depot_query interface
+	 */
+	void trigger_depot_query() override
+	{
+		/*
+		 * Defer the submission of the query for a few milliseconds because
+		 * 'trigger_depot_query' may be consecutively called several times
+		 * while evaluating different conditions. Without deferring, the depot
+		 * query component would produce intermediate results that take time
+		 * but are ultimately discarded.
+		 */
+		_deferred_depot_query_handler.schedule(Microseconds{5000});
 	}
 
 
@@ -247,6 +265,16 @@ struct Sculpt::Main : Input_event_handler,
 		_blueprint_rom.update();
 
 		Xml_node const blueprint = _blueprint_rom.xml();
+
+		/*
+		 * Drop intermediate results that will be superseded by a newer query.
+		 * This is important because an outdated blueprint would be disregarded
+		 * by 'handle_deploy' anyway while at the same time a new query is
+		 * issued. This can result a feedback loop where blueprints are
+		 * requested but never applied.
+		 */
+		if (blueprint.attribute_value("version", 0U) != _query_version.value)
+			return;
 
 		_runtime_state.apply_to_construction([&] (Component &component) {
 			_popup_dialog.apply_blueprint(component, blueprint); });
@@ -929,6 +957,8 @@ void Sculpt::Main::_handle_nitpicker_mode()
 		_gui.font_size(text_size);
 
 		_fonts_config.generate([&] (Xml_generator &xml) {
+			xml.attribute("copy",  true);
+			xml.attribute("paste", true);
 			xml.node("vfs", [&] () {
 				gen_named_node(xml, "rom", "Vera.ttf");
 				gen_named_node(xml, "rom", "VeraMono.ttf");
@@ -955,9 +985,11 @@ void Sculpt::Main::_handle_nitpicker_mode()
 			xml.node("default-policy", [&] () { xml.attribute("root", "/fonts"); });
 
 			auto gen_color = [&] (unsigned index, Color color) {
-				xml.node("color", [&] () {
-					xml.attribute("index", index);
-					xml.attribute("bg", String<16>(color));
+				xml.node("palette", [&] () {
+					xml.node("color", [&] () {
+						xml.attribute("index", index);
+						xml.attribute("value", String<16>(color));
+					});
 				});
 			};
 
@@ -1067,6 +1099,7 @@ void Sculpt::Main::_handle_runtime_state()
 	_runtime_state.update_from_state_report(state);
 
 	bool reconfigure_runtime = false;
+	bool regenerate_dialog   = false;
 
 	/* check for completed storage operations */
 	_storage._storage_devices.for_each([&] (Storage_device &device) {
@@ -1153,6 +1186,17 @@ void Sculpt::Main::_handle_runtime_state()
 
 	}); /* for each device */
 
+	/* handle failed initialization of USB-storage devices */
+	_storage._storage_devices.usb_storage_devices.for_each([&] (Usb_storage_device &dev) {
+		String<64> name(dev.usb_block_drv_name());
+		Child_exit_state exit_state(state, name);
+		if (exit_state.exited) {
+			dev.discard_usb_block_drv();
+			reconfigure_runtime = true;
+			regenerate_dialog   = true;
+		}
+	});
+
 	/* remove prepare subsystem when finished */
 	{
 		Child_exit_state exit_state(state, "prepare");
@@ -1201,7 +1245,7 @@ void Sculpt::Main::_handle_runtime_state()
 		  | _runtime_view_state.apply_child_state_report(child)) {
 
 			reconfigure_runtime = true;
-			generate_dialog();
+			regenerate_dialog   = true;
 		}
 	});
 
@@ -1213,8 +1257,11 @@ void Sculpt::Main::_handle_runtime_state()
 
 	if (_deploy.update_child_conditions()) {
 		reconfigure_runtime = true;
-		generate_dialog();
+		regenerate_dialog   = true;
 	}
+
+	if (regenerate_dialog)
+		generate_dialog();
 
 	if (reconfigure_runtime)
 		generate_runtime_config();
@@ -1240,6 +1287,7 @@ void Sculpt::Main::_generate_runtime_config(Xml_generator &xml) const
 		gen_parent_service<Pd_session>(xml);
 		gen_parent_service<Rm_session>(xml);
 		gen_parent_service<Log_session>(xml);
+		gen_parent_service<Vm_session>(xml);
 		gen_parent_service<Timer::Session>(xml);
 		gen_parent_service<Report::Session>(xml);
 		gen_parent_service<Platform::Session>(xml);

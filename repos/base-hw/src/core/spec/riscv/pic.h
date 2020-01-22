@@ -16,12 +16,12 @@
 #ifndef _CORE__SPEC__RISCV__PIC_H_
 #define _CORE__SPEC__RISCV__PIC_H_
 
-namespace Genode { class Pic; }
+namespace Board { class Pic; }
 
 /**
  * Dummy PIC driver for core
  */
-class Genode::Pic
+class Board::Pic
 {
 	public:
 
@@ -39,8 +39,7 @@ class Genode::Pic
 		void unmask(unsigned, unsigned) { }
 		void mask(unsigned) { }
 		void finish_request() { }
+		void irq_mode(unsigned, unsigned, unsigned) { }
 };
-
-namespace Kernel { class Pic : public Genode::Pic { }; }
 
 #endif /* _CORE__SPEC__RISCV__PIC_H_ */

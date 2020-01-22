@@ -58,8 +58,12 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				if (io->check_unblock(false, true, false)) {
 					/* 'io->write' is expected to update '_sysio.write_out.count' */
 					result = io->write(_sysio);
-				} else
-					_sysio.error.write = Vfs::File_io_service::WRITE_ERR_INTERRUPT;
+				} else {
+					if (io->nonblocking())
+						_sysio.error.write = Vfs::File_io_service::WRITE_ERR_WOULD_BLOCK;
+					else
+						_sysio.error.write = Vfs::File_io_service::WRITE_ERR_INTERRUPT;
+				}
 
 				break;
 			}
@@ -73,8 +77,12 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 
 				if (io->check_unblock(true, false, false))
 					result = io->read(_sysio);
-				else
-					_sysio.error.read = Vfs::File_io_service::READ_ERR_INTERRUPT;
+				else {
+					if (io->nonblocking())
+						_sysio.error.read = Vfs::File_io_service::READ_ERR_WOULD_BLOCK;
+					else
+						_sysio.error.read = Vfs::File_io_service::READ_ERR_INTERRUPT;
+				}
 
 				break;
 			}
@@ -113,9 +121,6 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				 * we use the ones specificed in the config.
 				 */
 				if (result) {
-					stat_out.uid = _user_info.uid();
-					stat_out.gid = _user_info.gid();
-
 					stat_out.inode = path_hash;
 				}
 
@@ -225,12 +230,17 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				if (&vfs_handle->ds() == &_root_dir)
 					leaf_path = _sysio.open_in.path;
 
+				if (!leaf_path)
+					break;
+
 				Shared_pointer<Io_channel>
 					channel(new (_heap) Vfs_io_channel(_sysio.open_in.path,
 					                                   leaf_path,
 					                                   vfs_handle,
 					                                   _vfs_io_waiter_registry,
-					                                   _env.ep()),
+					                                   _env.ep(),
+					                                   _time_info,
+					                                   _timer_connection),
 					                                   _heap);
 
 				_sysio.open_out.fd = add_io_channel(channel);
@@ -307,8 +317,8 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				int _rd_array[in_fds_total];
 				int _wr_array[in_fds_total];
 
-				unsigned long timeout_sec  = _sysio.select_in.timeout.sec;
-				unsigned long timeout_usec = _sysio.select_in.timeout.usec;
+				Genode::uint64_t timeout_sec  = _sysio.select_in.timeout.sec;
+				Genode::uint64_t timeout_usec = _sysio.select_in.timeout.usec;
 
 				bool timeout_reached = false;
 
@@ -503,6 +513,7 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 					child = new (_heap) Child(_child_policy.name(),
 					                          _verbose,
 					                          _user_info,
+					                          _time_info,
 					                          this,
 					                          _kill_broadcaster,
 					                          _timer_connection,
@@ -646,8 +657,9 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				vfs_io_waiter.wait_for_io();
 
 			Vfs_handle_context read_context;
+			Vfs::Vfs_handle::Guard guard(symlink_handle);
 
-			symlink_handle->context = &read_context;
+			symlink_handle->handler(&read_context);
 
 			Vfs::file_size out_count = 0;
 			Vfs::File_io_service::Read_result read_result;
@@ -668,8 +680,6 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 			_vfs_io_waiter_registry.for_each([] (Vfs_io_waiter &r) {
 				r.wakeup();
 			});
-
-			symlink_handle->ds().close(symlink_handle);
 
 			_sysio.readlink_out.count = out_count;
 
@@ -781,8 +791,9 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				vfs_io_waiter.wait_for_io();
 
 			Vfs_handle_context sync_context;
+			Vfs::Vfs_handle::Guard guard(symlink_handle);
 
-			symlink_handle->context = &sync_context;
+			symlink_handle->handler(&sync_context);
 
 			while (symlink_handle->fs().complete_sync(symlink_handle) ==
 				   Vfs::File_io_service::SYNC_QUEUED)
@@ -792,8 +803,6 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 			_vfs_io_waiter_registry.for_each([] (Vfs_io_waiter &r) {
 				r.wakeup();
 			});
-
-			symlink_handle->ds().close(symlink_handle);
 
 			break;
 		}
@@ -838,7 +847,8 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				Milliseconds const ms =
 					_timer_connection.curr_time().trunc_to_plain_ms();
 
-				_sysio.gettimeofday_out.sec  = (ms.value / 1000);
+				_sysio.gettimeofday_out.sec  = _time_info.initial_time();
+				_sysio.gettimeofday_out.sec += (ms.value / 1000);
 				_sysio.gettimeofday_out.usec = (ms.value % 1000) * 1000;
 
 				result = true;
@@ -858,7 +868,8 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				/* CLOCK_SECOND is used by time(3) in the libc. */
 				case Sysio::CLOCK_ID_SECOND:
 					{
-						_sysio.clock_gettime_out.sec    = (ms.value / 1000);
+						_sysio.clock_gettime_out.sec    = _time_info.initial_time();
+						_sysio.clock_gettime_out.sec   += (ms.value / 1000);
 						_sysio.clock_gettime_out.nsec   = 0;
 
 						result = true;
@@ -883,13 +894,42 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 		case SYSCALL_UTIMES:
 			{
 				/**
-				 * This systemcall is currently not implemented because we lack
-				 * the needed mechanisms in most file-systems.
-				 *
-				 * But we return true anyway to keep certain programs, e.g. make
-				 * happy.
+				 * Always return true, even if 'update_modification_timestamp'
+				 * failed to keep programs, e.g. make, happy.
 				 */
 				result = true;
+
+				char const *path   = (char const *)_sysio.utimes_in.path;
+				unsigned long sec  = _sysio.utimes_in.sec;
+				unsigned long usec = _sysio.utimes_in.usec;
+				(void)usec;
+
+				Vfs::Vfs_handle *vfs_handle = 0;
+				_root_dir.open(path, 0, &vfs_handle, _heap);
+				if (!vfs_handle) { break; }
+
+				if (!sec) {
+					Milliseconds const ms =
+						_timer_connection.curr_time().trunc_to_plain_ms();
+					sec   = _time_info.initial_time();
+					sec  += (ms.value / 1000);
+					usec  = (ms.value % 1000) * 1000;
+				}
+
+				Registered_no_delete<Vfs_io_waiter>
+					vfs_io_waiter(_vfs_io_waiter_registry);
+
+				Vfs::Timestamp ts { .value = (long long)sec };
+
+				for (;;) {
+					if (vfs_handle->fs().update_modification_timestamp(vfs_handle, ts)) {
+						break;
+					} else {
+						vfs_io_waiter.wait_for_io();
+					}
+				}
+
+				_root_dir.close(vfs_handle);
 				break;
 			}
 
@@ -913,8 +953,9 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 					vfs_io_waiter.wait_for_io();
 
 				Vfs_handle_context sync_context;
+				Vfs::Vfs_handle::Guard guard(sync_handle);
 
-				sync_handle->context = &sync_context;
+				sync_handle->handler(&sync_context);
 
 				while (sync_handle->fs().complete_sync(sync_handle) ==
 				   Vfs::File_io_service::SYNC_QUEUED)
@@ -924,8 +965,6 @@ bool Noux::Child::syscall(Noux::Session::Syscall sc)
 				_vfs_io_waiter_registry.for_each([] (Vfs_io_waiter &r) {
 					r.wakeup();
 				});
-
-				sync_handle->ds().close(sync_handle);
 
 				break;
 			}

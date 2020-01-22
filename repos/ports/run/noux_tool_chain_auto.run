@@ -19,7 +19,8 @@ if {[get_cmd_switch --autopilot] && [have_include "power_on/qemu"]} {
 	exit 0
 }
 
-if {[have_spec pistachio] || [have_spec sel4]} {
+if {[have_spec pistachio] || [have_spec sel4] ||
+    [expr [have_spec foc] && [have_spec imx7d_sabre]] } {
 	puts "Platform is unsupported."
 	exit 0
 }
@@ -59,19 +60,26 @@ if {[have_spec arm]} {
 
 	set noux_boot_timeout   350
 
-	if {[have_spec panda]}   {
-		set platform "panda"
-	}
-	if {[have_spec arndale]} {
-		set platform "arndale"
-	}
-	if {[have_spec pbxa9]}   { set platform "pbxa9" }
+	if {[have_spec panda]}           { set platform "panda" }
+	if {[have_spec arndale]}         { set platform "arndale" }
+	if {[have_spec pbxa9]}           { set platform "pbxa9" }
+	if {[have_spec imx6q_sabrelite]} { set platform "imx6q_sabrelite" }
+	if {[have_spec imx7d_sabre]}     { set platform "imx7d_sabre" }
 
 	if {![info exists platform]} {
 		puts "\n Run script is not supported on this platform. \n"
 		exit 0
 	}
 
+}
+
+if {[have_spec arm_64]} {
+	set binutils "binutils_arm_64"
+	set gcc "gcc_arm_64"
+	set tool_prefix "genode-aarch64-"
+
+	set noux_boot_timeout   350
+	set platform            "arm_v8a"
 }
 
 if {[have_spec x86]} {
@@ -115,7 +123,7 @@ echo 'creating build directory...'
 mkdir -p "/home/build"
 cp -r /genode/depot /home/build
 }
-puts $bash_profile_fd "./genode/tool/depot/create DEPOT_DIR=/home/build/depot \
+puts $bash_profile_fd "/genode/tool/depot/create DEPOT_DIR=/home/build/depot \
       test/bin/$platform/zlib CROSS_DEV_PREFIX=$tool_prefix && exit 234"
 close $bash_profile_fd
 

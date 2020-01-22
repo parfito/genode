@@ -93,7 +93,7 @@ class Input::Event
 		 * types for assignments or for passing an event as return value.
 		 */
 		Event(Press_char      arg) : _type(PRESS)         { _attr.press = arg; }
-		Event(Press           arg) : Event(Press_char{arg.key, Codepoint{INVALID}}) { }
+		Event(Press           arg) : Event(Press_char{arg.key, Codepoint{Codepoint::INVALID}}) { }
 		Event(Release         arg) : _type(RELEASE)       { _attr.release = arg; }
 		Event(Relative_motion arg) : _type(REL_MOTION)    { _attr.rel_motion = arg; }
 		Event(Absolute_motion arg) : _type(ABS_MOTION)    { _attr.abs_motion = arg; }
@@ -141,7 +141,7 @@ class Input::Event
 		template <typename FN>
 		void handle_repeat(FN const &fn) const
 		{
-			if (key_press(KEY_UNKNOWN) && _attr.press.codepoint.value)
+			if (key_press(KEY_UNKNOWN) && _attr.press.codepoint.valid())
 				fn(_attr.press.codepoint);
 		}
 

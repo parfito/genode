@@ -12,8 +12,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
 
 /* core includes */
 #include <boot_modules.h>
@@ -24,7 +22,6 @@
 #include <platform_pd.h>
 #include <hw/page_flags.h>
 #include <hw/util.h>
-#include <pic.h>
 #include <kernel/kernel.h>
 #include <translation_table.h>
 #include <kernel/cpu.h>
@@ -33,6 +30,10 @@
 #include <base/internal/crt0.h>
 #include <base/internal/stack_area.h>
 
+/* Genode includes */
+#include <base/log.h>
+#include <trace/source_registry.h>
+
 using namespace Genode;
 
 
@@ -40,8 +41,8 @@ using namespace Genode;
  ** Platform **
  **************/
 
-Hw::Boot_info const & Platform::_boot_info() {
-	return *reinterpret_cast<Hw::Boot_info*>(Hw::Mm::boot_info().base); }
+Hw::Boot_info<Board::Boot_info> const & Platform::_boot_info() {
+	return *reinterpret_cast<Hw::Boot_info<Board::Boot_info>*>(Hw::Mm::boot_info().base); }
 
 addr_t Platform::mmio_to_virt(addr_t mmio) {
 	return _boot_info().mmio_space.virt_addr(mmio); }
@@ -95,6 +96,54 @@ addr_t Platform::_rom_module_phys(addr_t virt)
 }
 
 
+void Platform::_init_platform_info()
+{
+	unsigned const  pages    = 1;
+	size_t   const  rom_size = pages << get_page_size_log2();
+	void           *phys_ptr = nullptr;
+	void           *virt_ptr = nullptr;
+	const char     *rom_name = "platform_info";
+
+	if (!ram_alloc().alloc(get_page_size(), &phys_ptr)) {
+		error("could not setup platform_info ROM - ram allocation error");
+		return;
+	}
+
+	if (!region_alloc().alloc(rom_size, &virt_ptr)) {
+		error("could not setup platform_info ROM - region allocation error");
+		ram_alloc().free(phys_ptr);
+		return;
+	}
+
+	addr_t const phys_addr = reinterpret_cast<addr_t>(phys_ptr);
+	addr_t const virt_addr = reinterpret_cast<addr_t>(virt_ptr);
+
+	if (!map_local(phys_addr, virt_addr, pages, Hw::PAGE_FLAGS_KERN_DATA)) {
+		error("could not setup platform_info ROM - map error");
+		region_alloc().free(virt_ptr);
+		ram_alloc().free(phys_ptr);
+		return;
+	}
+
+	Genode::Xml_generator xml(reinterpret_cast<char *>(virt_addr),
+	                          rom_size, rom_name, [&] ()
+	{
+		xml.node("kernel", [&] () { xml.attribute("name", "hw"); });
+		_init_additional_platform_info(xml);
+	});
+
+	if (!unmap_local(virt_addr, pages)) {
+		error("could not setup platform_info ROM - unmap error");
+		return;
+	}
+
+	region_alloc().free(virt_ptr);
+
+	_rom_fs.insert(
+		new (core_mem_alloc()) Rom_module(phys_addr, rom_size, rom_name));
+}
+
+
 Platform::Platform()
 :
 	_io_mem_alloc(&core_mem_alloc()),
@@ -115,14 +164,14 @@ Platform::Platform()
 	_init_io_port_alloc();
 
 	/* make all non-kernel interrupts available to the interrupt allocator */
-	for (unsigned i = 0; i < Kernel::Pic::NR_OF_IRQ; i++) {
+	for (unsigned i = 0; i < Board::Pic::NR_OF_IRQ; i++) {
 		bool kernel_resource = false;
 		Kernel::cpu_pool().for_each_cpu([&] (Kernel::Cpu & cpu) {
 			if (i == cpu.timer().interrupt_id()) {
 				kernel_resource = true;
 			}
 		});
-		if (i == Pic::IPI) {
+		if (i == Board::Pic::IPI) {
 			kernel_resource = true;
 		}
 		if (kernel_resource) {
@@ -133,7 +182,7 @@ Platform::Platform()
 
 	_init_io_mem_alloc();
 	_init_rom_modules();
-	_init_additional();
+	_init_platform_info();
 
 	/* core log as ROM module */
 	{
@@ -157,6 +206,40 @@ Platform::Platform()
 
 		init_core_log(Core_log_range { core_local_addr, log_size } );
 	}
+
+	struct Trace_source : public  Trace::Source::Info_accessor,
+	                      private Trace::Control,
+	                      private Trace::Source
+	{
+		Kernel::Thread          &thread;
+		Affinity::Location const affinity;
+
+		/**
+		 * Trace::Source::Info_accessor interface
+		 */
+		Info trace_source_info() const override
+		{
+			Trace::Execution_time execution_time { thread.execution_time(), 0 };
+			return { Session_label("kernel"), thread.label(), execution_time,
+			         affinity };
+		}
+
+		Trace_source(Trace::Source_registry &registry,
+		             Kernel::Thread &thread, Affinity::Location affinity)
+		:
+			Trace::Control(),
+			Trace::Source(*this, *this),
+			thread(thread), affinity(affinity)
+		{
+			registry.insert(this);
+		}
+	};
+
+	/* create trace sources for idle threads */
+	Kernel::cpu_pool().for_each_cpu([&] (Kernel::Cpu & cpu) {
+		new (core_mem_alloc()) Trace_source(Trace::sources(), cpu.idle_thread(),
+		                                    Affinity::Location(cpu.id(), 0));
+	});
 
 	log(_rom_fs);
 }

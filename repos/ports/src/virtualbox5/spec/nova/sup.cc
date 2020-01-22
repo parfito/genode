@@ -39,7 +39,7 @@
 #include "vcpu_vmx.h"
 
 /* libc memory allocator */
-#include <libc_mem_alloc.h>
+#include <internal/mem_alloc.h>
 
 /* libc */
 #include <sched.h> /* sched_yield */
@@ -47,7 +47,7 @@
 #include "mm.h"
 
 
-extern "C" bool PGMUnmapMemoryGenode(void *, ::size_t);
+extern "C" bool PGMUnmapMemoryGenode(void *, RTGCPHYS, ::size_t);
 extern "C" void PGMFlushVMMemory();
 
 
@@ -170,10 +170,11 @@ HRESULT genode_setup_machine(ComObjPtr<Machine> machine)
 	 * - second chunkid (1..2) is reserved for handy pages allocation
 	 * - another chunkid is used additional for handy pages but as large page
 	 */
-	HRESULT ret = genode_check_memory_config(machine);
-
+	size_t const vmm_memory = 1024ULL * 1024 * (memory_vbox + 16) +
+	                          (CHUNKID_START + 1) * GMM_CHUNK_SIZE;
+	HRESULT ret = genode_check_memory_config(machine, vmm_memory);
 	if (ret == VINF_SUCCESS)
-		vm_memory(1024ULL * 1024 * memory_vbox + (CHUNKID_START + 1) * GMM_CHUNK_SIZE);
+		vm_memory(vmm_memory);
 
 	return ret;
 };
@@ -649,7 +650,7 @@ int SUPR3CallVMMR0Ex(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation,
 			if (last_chunk != chunkid) {
 				/* revoke mapping from guest VM */
 				void * vmm_local = reinterpret_cast<void *>(vm_memory().local_addr(chunkid << GMM_CHUNK_SHIFT));
-				PGMUnmapMemoryGenode(vmm_local, GMM_CHUNK_SIZE);
+				PGMUnmapMemoryGenode(vmm_local, 0, GMM_CHUNK_SIZE);
 
 				last_chunk = chunkid;
 			}
@@ -705,7 +706,7 @@ uint64_t genode_cpu_hz()
 }
 
 
-void genode_update_tsc(void (*update_func)(void), unsigned long update_us)
+void genode_update_tsc(void (*update_func)(void), Genode::uint64_t update_us)
 {
 	using namespace Genode;
 	using namespace Nova;
@@ -731,7 +732,7 @@ void genode_update_tsc(void (*update_func)(void), unsigned long update_us)
 }
 
 
-bool PGMUnmapMemoryGenode(void * vmm_local, ::size_t size)
+bool PGMUnmapMemoryGenode(void * vmm_local, RTGCPHYS, ::size_t size)
 {
 	Assert(vmm_local);
 
@@ -760,7 +761,7 @@ bool PGMUnmapMemoryGenode(void * vmm_local, ::size_t size)
 
 extern "C" void PGMFlushVMMemory()
 {
-	PGMUnmapMemoryGenode((void *)vm_memory().local_addr(0), MAX_VM_MEMORY);
+	PGMUnmapMemoryGenode((void *)vm_memory().local_addr(0), 0, MAX_VM_MEMORY);
 }
 
 
@@ -781,7 +782,7 @@ bool create_emt_vcpu(pthread_t * pthread, ::size_t stack,
                      void *(*start_routine)(void *), void *arg,
                      Genode::Cpu_session * cpu_session,
                      Genode::Affinity::Location location,
-                     unsigned int cpu_id, const char * name)
+                     unsigned int cpu_id, const char * name, long)
 {
 	Genode::Xml_node const features = platform_rom().sub_node("features");
 	bool const svm = features.attribute_value("svm", false);

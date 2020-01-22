@@ -14,11 +14,15 @@
 #ifndef _CORE__SPEC__X86_64__MUEN__BOARD_H_
 #define _CORE__SPEC__X86_64__MUEN__BOARD_H_
 
-#include <drivers/uart/x86_pc.h>
+#include <hw/spec/x86_64/pc_board.h>
+#include <spec/x86_64/muen/pic.h>
+#include <spec/x86_64/muen/timer.h>
+#include <cpu/cpu_state.h>
+
+namespace Kernel { class Cpu; }
 
 namespace Board {
-	struct Serial;
-	enum Dummies { UART_BASE, UART_CLOCK };
+	using namespace Hw::Pc_board;
 
 	enum {
 		TIMER_BASE_ADDR         = 0xe00010000,
@@ -32,11 +36,15 @@ namespace Board {
 		TIMER_VECTOR_KERNEL = 32,
 		TIMER_VECTOR_USER   = 50,
 	};
+
+	using Vm_state = Genode::Cpu_state;
+
+	enum { VCPU_MAX = 1 };
+
+	struct Vm_page_table {};
+	struct Vm_page_table_array {};
+
+	struct Vcpu_context { Vcpu_context(Kernel::Cpu &) {} };
 }
-
-
-struct Board::Serial : Genode::X86_uart {
-	Serial(Genode::addr_t, Genode::size_t, unsigned);
-};
 
 #endif /* _CORE__SPEC__X86_64__MUEN__BOARD_H_ */

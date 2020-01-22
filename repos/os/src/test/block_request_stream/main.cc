@@ -29,36 +29,36 @@ namespace Test {
 
 
 struct Test::Block_session_component : Rpc_object<Block::Session>,
-                                       Block::Request_stream
+                                       private Block::Request_stream
 {
 	Entrypoint &_ep;
 
 	static constexpr size_t BLOCK_SIZE = 4096;
 	static constexpr size_t NUM_BLOCKS = 16;
 
+	using Block::Request_stream::with_requests;
+	using Block::Request_stream::with_content;
+	using Block::Request_stream::try_acknowledge;
+	using Block::Request_stream::wakeup_client_if_needed;
+
 	Block_session_component(Region_map               &rm,
 	                        Dataspace_capability      ds,
 	                        Entrypoint               &ep,
 	                        Signal_context_capability sigh)
 	:
-		Request_stream(rm, ds, ep, sigh, BLOCK_SIZE), _ep(ep)
+		Request_stream(rm, ds, ep, sigh,
+		               Info { .block_size  = BLOCK_SIZE,
+		                      .block_count = NUM_BLOCKS,
+		                      .align_log2  = log2(BLOCK_SIZE),
+		                      .writeable   = true }),
+		_ep(ep)
 	{
 		_ep.manage(*this);
 	}
 
 	~Block_session_component() { _ep.dissolve(*this); }
 
-	void info(Block::sector_t *count, size_t *block_size, Operations *ops) override
-	{
-		*count      = NUM_BLOCKS;
-		*block_size = BLOCK_SIZE;
-		*ops        = Operations();
-
-		ops->set_operation(Block::Packet_descriptor::Opcode::READ);
-		ops->set_operation(Block::Packet_descriptor::Opcode::WRITE);
-	}
-
-	void sync() override { }
+	Info info() const override { return Request_stream::info(); }
 
 	Capability<Tx> tx_cap() override { return Request_stream::tx_cap(); }
 };
@@ -67,6 +67,8 @@ struct Test::Block_session_component : Rpc_object<Block::Session>,
 template <unsigned N>
 struct Test::Jobs : Noncopyable
 {
+	Jobs() { }
+
 	struct Entry
 	{
 		Block::Request request;
@@ -104,7 +106,7 @@ struct Test::Jobs : Noncopyable
 		for (unsigned i = 0; i < N; i++) {
 			if (_entries[i].state == Entry::IN_PROGRESS) {
 				_entries[i].state = Entry::COMPLETE;
-				_entries[i].request.success = Block::Request::Success::TRUE;
+				_entries[i].request.success = true;
 				progress = true;
 			}
 		}
@@ -135,7 +137,7 @@ struct Test::Jobs : Noncopyable
 
 		completed_job(request);
 
-		if (request.operation_defined())
+		if (request.operation.valid())
 			fn(request);
 	}
 };
@@ -168,7 +170,7 @@ struct Test::Main : Rpc_object<Typed_root<Block::Session> >
 			block_session.with_requests([&] (Block::Request request) {
 
 				if (!_jobs.acceptable(request))
-					return Block_session_component::Response::RETRY;
+					return Block::Request_stream::Response::RETRY;
 
 				/* access content of the request */
 				block_session.with_content(request, [&] (void *ptr, size_t size) {
@@ -180,14 +182,14 @@ struct Test::Main : Rpc_object<Typed_root<Block::Session> >
 
 				progress = true;
 
-				return Block_session_component::Response::ACCEPTED;
+				return Block::Request_stream::Response::ACCEPTED;
 			});
 
 			/* process I/O */
 			progress |= _jobs.execute();
 
 			/* acknowledge finished jobs */
-			block_session.try_acknowledge([&] (Block_session_component::Ack &ack) {
+			block_session.try_acknowledge([&] (Block::Request_stream::Ack &ack) {
 
 				_jobs.with_any_completed_job([&] (Block::Request request) {
 					progress |= true;
@@ -199,7 +201,7 @@ struct Test::Main : Rpc_object<Typed_root<Block::Session> >
 				break;
 		}
 
-		block_session.wakeup_client();
+		block_session.wakeup_client_if_needed();
 	}
 
 

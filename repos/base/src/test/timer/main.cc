@@ -37,7 +37,7 @@ struct Lazy_test
 	Signal_handler<Lazy_test> faster_handler { env.ep(), *this,
 	                                           &Lazy_test::handle_faster_timer };
 
-	enum { RUN_TIME_US = 2 * 1000 * 1000, TIMEOUT_US = 50*1000, FACTOR = 2 };
+	enum { RUN_TIME_US = 4*1000*1000, TIMEOUT_US = 200*1000, FACTOR = 8 };
 	unsigned fast = 0;
 	unsigned faster = 0;
 
@@ -52,7 +52,8 @@ struct Lazy_test
 		done.submit();
 	}
 
-	void handle_fast_timer()   {
+	void handle_fast_timer()
+	{
 		fast ++;
 		if (faster <= fast)
 			throw Faster_timer_too_slow();
@@ -73,7 +74,7 @@ struct Lazy_test
 		fast_timer.sigh(fast_handler);
 		faster_timer.sigh(faster_handler);
 
-		log("register two-seconds timeout...");
+		log("register ", RUN_TIME_US/1000/1000, "-seconds timeout...");
 		slow_timer.trigger_once(RUN_TIME_US);
 		set_fast_timers();
 	}
@@ -99,10 +100,10 @@ struct Stress_test
 
 		Signal_handler<Slave> timer_handler;
 		Timer::Connection     timer;
-		unsigned long         us;
+		uint64_t              us;
 		unsigned              count { 0 };
 
-		Slave(Env &env, unsigned us)
+		Slave(Env &env, uint64_t us)
 		: timer_handler(env.ep(), *this, &Slave::handle_timer),
 		  timer(env), us(us) { timer.sigh(timer_handler); }
 
@@ -119,7 +120,7 @@ struct Stress_test
 			log("timer (period ", us, " us) triggered ", count,
 			    " times (min ", (unsigned)MIN_CNT,
 			           " max ", (unsigned)MAX_CNT, ") -> slept ",
-			    ((unsigned long)us * count) / 1000, " ms");
+			    ((uint64_t)us * count) / 1000, " ms");
 
 			/* detect starvation of timeouts */
 			if (count < MIN_CNT) {
@@ -151,8 +152,8 @@ struct Stress_test
 	{
 		if (count < DURATION_SEC) {
 			count++;
-			log("wait ", count, "/", (unsigned)DURATION_SEC);
-			timer.trigger_once(1000UL * 1000);
+			log("wait ", count, "/", (uint64_t)DURATION_SEC);
+			timer.trigger_once((uint64_t)1000 * 1000);
 		} else {
 			unsigned starvation = 0;
 			unsigned rate_violation = 0;
@@ -175,13 +176,13 @@ struct Stress_test
 	{
 		timer.sigh(handler);
 
-		for (unsigned long us_1 = 1; us_1 < MAX_SLV_PERIOD_US; us_1 *= 2) {
+		for (uint64_t us_1 = 1; us_1 < MAX_SLV_PERIOD_US; us_1 *= 2) {
 			new (heap) Registered<Slave>(slaves, env, us_1 - us_1 / 3);
 			new (heap) Registered<Slave>(slaves, env, us_1);
 		}
 
 		slaves.for_each([&] (Slave &slv) { slv.start(); });
-		timer.trigger_once(1000 * 1000);
+		timer.trigger_once((uint64_t)1000 * 1000);
 	}
 
 	~Stress_test() {

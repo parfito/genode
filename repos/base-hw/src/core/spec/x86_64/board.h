@@ -14,11 +14,12 @@
 #ifndef _CORE__SPEC__X86_64__BOARD_H_
 #define _CORE__SPEC__X86_64__BOARD_H_
 
-#include <drivers/uart/x86_pc.h>
+#include <hw/spec/x86_64/pc_board.h>
+#include <spec/x86_64/pic.h>
+#include <spec/x86_64/pit.h>
 
 namespace Board {
-	struct Serial;
-	enum Dummies { UART_BASE, UART_CLOCK };
+	using namespace Hw::Pc_board;
 
 	enum {
 		VECTOR_REMAP_BASE   = 48,
@@ -27,10 +28,5 @@ namespace Board {
 		ISA_IRQ_END         = 15,
 	};
 }
-
-
-struct Board::Serial : Genode::X86_uart {
-	Serial(Genode::addr_t, Genode::size_t, unsigned);
-};
 
 #endif /* _CORE__SPEC__X86_64__BOARD_H_ */

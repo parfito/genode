@@ -27,19 +27,30 @@ class Genode::Vm_root : public Root_component<Vm_session_component>
 {
 	private:
 
-		Ram_allocator    &_ram_allocator;
-		Region_map       &_local_rm;
+		Ram_allocator          &_ram_allocator;
+		Region_map             &_local_rm;
+		Trace::Source_registry &_trace_sources;
 
 	protected:
 
 		Vm_session_component *_create_session(const char *args) override
 		{
+			unsigned priority = 0;
+			Arg a = Arg_string::find_arg(args, "priority");
+			if (a.valid()) {
+				priority = a.ulong_value(0);
+
+				/* clamp priority value to valid range */
+				priority = min((unsigned)Cpu_session::PRIORITY_LIMIT - 1, priority);
+			}
+
 			return new (md_alloc())
 				Vm_session_component(*ep(),
 				                     session_resources_from_args(args),
 				                     session_label_from_args(args),
 				                     session_diag_from_args(args),
-				                     _ram_allocator, _local_rm);
+				                     _ram_allocator, _local_rm, priority,
+				                     _trace_sources);
 		}
 
 		void _upgrade_session(Vm_session_component *vm, const char *args) override
@@ -56,13 +67,15 @@ class Genode::Vm_root : public Root_component<Vm_session_component>
 		 * \param session_ep  entrypoint managing vm_session components
 		 * \param md_alloc    meta-data allocator to be used by root component
 		 */
-		Vm_root(Rpc_entrypoint &session_ep,
-		        Allocator      &md_alloc,
-		        Ram_allocator  &ram_alloc,
-		        Region_map     &local_rm)
+		Vm_root(Rpc_entrypoint         &session_ep,
+		        Allocator              &md_alloc,
+		        Ram_allocator          &ram_alloc,
+		        Region_map             &local_rm,
+		        Trace::Source_registry &trace_sources)
 		: Root_component<Vm_session_component>(&session_ep, &md_alloc),
 		 _ram_allocator(ram_alloc),
-		 _local_rm(local_rm)
+		 _local_rm(local_rm),
+		 _trace_sources(trace_sources)
 		{ }
 };
 

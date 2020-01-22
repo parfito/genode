@@ -36,8 +36,11 @@ namespace Lwip {
 
 	struct Sys_timer
 	{
-		void check_timeouts(Genode::Duration) {
-			sys_check_timeouts(); }
+		void check_timeouts(Genode::Duration)
+		{
+			Genode::Lock::Guard g{ Lwip::lock() };
+			sys_check_timeouts();
+		}
 
 		Genode::Timeout_scheduler &timer;
 
@@ -48,7 +51,7 @@ namespace Lwip {
 		Sys_timer(Genode::Timeout_scheduler &timer) : timer(timer) { }
 	};
 
-	static Genode::Constructible<Sys_timer> _sys_timer;
+	static Sys_timer *sys_timer_ptr;
 
 	void genode_init(Genode::Allocator &heap, Genode::Timeout_scheduler &timer)
 	{
@@ -56,8 +59,17 @@ namespace Lwip {
 		            !heap.need_size_for_free());
 
 		_heap = &heap;
-		_sys_timer.construct(timer);
+
+		static Sys_timer sys_timer(timer);
+		sys_timer_ptr = &sys_timer;
+
 		lwip_init();
+	}
+
+	Genode::Lock &lock()
+	{
+		static Genode::Lock _lwip_lock;
+		return _lwip_lock;
 	}
 }
 
@@ -93,7 +105,7 @@ extern "C" {
 	}
 
 	u32_t sys_now(void) {
-		return Lwip::_sys_timer->timer.curr_time().trunc_to_plain_ms().value; }
+		return Lwip::sys_timer_ptr->timer.curr_time().trunc_to_plain_ms().value; }
 
 	void genode_memcpy(void *dst, const void *src, size_t len) {
 		Genode::memcpy(dst, src, len); }

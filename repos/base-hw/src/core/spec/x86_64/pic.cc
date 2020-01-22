@@ -19,10 +19,10 @@
 
 /* core includes */
 #include <port_io.h>
-#include <pic.h>
 #include <platform.h>
 
 using namespace Genode;
+using namespace Board;
 
 uint8_t Pic::lapic_ids[NR_OF_CPUS];
 
@@ -88,6 +88,12 @@ void Pic::mask(unsigned const i)
 	ioapic.toggle_mask(i, true);
 }
 
+void Pic::irq_mode(unsigned irq_number, unsigned trigger,
+                   unsigned polarity)
+{
+	ioapic.irq_mode(irq_number, trigger, polarity);
+}
+
 inline unsigned Pic::get_lowest_bit(void)
 {
 	unsigned bit, vec_base = 0;
@@ -123,8 +129,10 @@ void Pic::send_ipi(unsigned const cpu_id) {
 
 Ioapic::Irq_mode Ioapic::_irq_mode[IRQ_COUNT];
 
-void Ioapic::setup_irq_mode(unsigned irq_number, unsigned trigger,
-                            unsigned polarity)
+enum { REMAP_BASE = Board::VECTOR_REMAP_BASE };
+
+void Ioapic::irq_mode(unsigned irq_number, unsigned trigger,
+                      unsigned polarity)
 {
 	const unsigned irq_nr = irq_number - REMAP_BASE;
 	bool needs_sync = false;

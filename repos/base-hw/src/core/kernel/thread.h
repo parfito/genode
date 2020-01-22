@@ -23,7 +23,7 @@
 #include <kernel/inter_processor_work.h>
 #include <kernel/signal_receiver.h>
 #include <kernel/ipc_node.h>
-#include <kernel/object.h>
+#include <object.h>
 
 namespace Kernel
 {
@@ -63,17 +63,18 @@ class Kernel::Thread
 		Thread &operator = (Thread const &);
 
 		/**
-		 * An update of page-table entries that requires architecture-wise
-		 * maintainance operations, e.g., a TLB invalidation needs
-		 * cross-cpu synchronization
+		 * A TLB invalidation may need cross-cpu synchronization
 		 */
-		struct Pd_update : Inter_processor_work
+		struct Tlb_invalidation : Inter_processor_work
 		{
 			Thread & caller; /* the caller gets blocked until all finished */
 			Pd     & pd;     /* the corresponding pd */
+			addr_t   addr;
+			size_t   size;
 			unsigned cnt;    /* count of cpus left */
 
-			Pd_update(Thread & caller, Pd & pd, unsigned cnt);
+			Tlb_invalidation(Thread & caller, Pd & pd, addr_t addr, size_t size,
+			                 unsigned cnt);
 
 			/************************************
 			 ** Inter_processor_work interface **
@@ -88,10 +89,12 @@ class Kernel::Thread
 		 */
 		struct Destroy : Inter_processor_work
 		{
-			Thread & caller; /* the caller gets blocked till the end */
-			Thread & thread_to_destroy; /* thread to be destroyed */
+			using Kthread = Genode::Kernel_object<Thread>;
 
-			Destroy(Thread & caller, Thread & to_destroy);
+			Thread  & caller; /* the caller gets blocked till the end */
+			Kthread & thread_to_destroy; /* thread to be destroyed */
+
+			Destroy(Thread & caller, Kthread & to_destroy);
 
 			/************************************
 			 ** Inter_processor_work interface **
@@ -100,7 +103,7 @@ class Kernel::Thread
 			void execute() override;
 		};
 
-		friend void Pd_update::execute();
+		friend void Tlb_invalidation::execute();
 		friend void Destroy::execute();
 
 	protected:
@@ -128,8 +131,8 @@ class Kernel::Thread
 		bool               _cancel_next_await_signal = false;
 		bool const         _core = false;
 
-		Genode::Constructible<Pd_update> _pd_update {};
-		Genode::Constructible<Destroy>   _destroy {};
+		Genode::Constructible<Tlb_invalidation> _tlb_invalidation {};
+		Genode::Constructible<Destroy>          _destroy {};
 
 		/**
 		 * Notice that another thread yielded the CPU to this thread
@@ -211,7 +214,7 @@ class Kernel::Thread
 		void _call_await_request_msg();
 		void _call_send_request_msg();
 		void _call_send_reply_msg();
-		void _call_update_pd();
+		void _call_invalidate_tlb();
 		void _call_update_data_region();
 		void _call_update_instr_region();
 		void _call_print_char();
@@ -227,6 +230,7 @@ class Kernel::Thread
 		void _call_pause_vm();
 		void _call_pager();
 		void _call_new_irq();
+		void _call_irq_mode();
 		void _call_ack_irq();
 		void _call_new_obj();
 		void _call_delete_obj();
@@ -239,18 +243,19 @@ class Kernel::Thread
 		template <typename T, typename... ARGS>
 		void _call_new(ARGS &&... args)
 		{
-			using Object = Core_object<T>;
-			void * dst = (void *)user_arg_1();
-			Object * o = Genode::construct_at<Object>(dst, args...);
-			user_arg_0(o->core_capid());
+			Genode::Kernel_object<T> & kobj =
+				*(Genode::Kernel_object<T>*)user_arg_1();
+			kobj.construct(args...);
+			user_arg_0(kobj->core_capid());
 		}
 
 
 		template <typename T>
 		void _call_delete()
 		{
-			using Object = Core_object<T>;
-			reinterpret_cast<Object*>(user_arg_1())->~Object();
+			Genode::Kernel_object<T> & kobj =
+				*(Genode::Kernel_object<T>*)user_arg_1();
+			kobj.destruct();
 		}
 
 
@@ -315,12 +320,14 @@ class Kernel::Thread
 		void user_arg_2(Kernel::Call_arg const arg);
 		void user_arg_3(Kernel::Call_arg const arg);
 		void user_arg_4(Kernel::Call_arg const arg);
+		void user_arg_5(Kernel::Call_arg const arg);
 
 		Kernel::Call_arg user_arg_0() const;
 		Kernel::Call_arg user_arg_1() const;
 		Kernel::Call_arg user_arg_2() const;
 		Kernel::Call_arg user_arg_3() const;
 		Kernel::Call_arg user_arg_4() const;
+		Kernel::Call_arg user_arg_5() const;
 
 		/**
 		 * Syscall to create a thread
@@ -332,11 +339,12 @@ class Kernel::Thread
 		 *
 		 * \retval capability id of the new kernel object
 		 */
-		static capid_t syscall_create(void * const p, unsigned const priority,
-		                              size_t const quota,
-		                              char const * const label)
+		static capid_t syscall_create(Genode::Kernel_object<Thread> & t,
+		                              unsigned const                  priority,
+		                              size_t const                    quota,
+		                              char const * const              label)
 		{
-			return call(call_id_new_thread(), (Call_arg)p, (Call_arg)priority,
+			return call(call_id_new_thread(), (Call_arg)&t, (Call_arg)priority,
 			            (Call_arg)quota, (Call_arg)label);
 		}
 
@@ -348,9 +356,10 @@ class Kernel::Thread
 		 *
 		 * \retval capability id of the new kernel object
 		 */
-		static capid_t syscall_create(void * const p, char const * const label)
+		static capid_t syscall_create(Genode::Kernel_object<Thread> & t,
+		                              char const * const              label)
 		{
-			return call(call_id_new_core_thread(), (Call_arg)p,
+			return call(call_id_new_core_thread(), (Call_arg)&t,
 			            (Call_arg)label);
 		}
 
@@ -359,8 +368,8 @@ class Kernel::Thread
 		 *
 		 * \param thread  pointer to thread kernel object
 		 */
-		static void syscall_destroy(Thread * thread) {
-			call(call_id_delete_thread(), (Call_arg)thread); }
+		static void syscall_destroy(Genode::Kernel_object<Thread> & t) {
+			call(call_id_delete_thread(), (Call_arg)&t); }
 
 		void print(Genode::Output &out) const;
 

@@ -23,9 +23,7 @@ using namespace Genode;
 
 void Platform::_init_io_port_alloc() { }
 
-void Platform::_init_additional() { }
-
-void Platform::setup_irq_mode(unsigned, unsigned, unsigned) { }
+void Platform::_init_additional_platform_info(Genode::Xml_generator&) { }
 
 long Platform::irq(long const /* user_irq */) { return 0; }
 

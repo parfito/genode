@@ -15,8 +15,9 @@
 
 unsigned Bootstrap::Platform::enable_mmu()
 {
-	Cpu::Sctlr::init();
-	Cpu::enable_mmu_and_caches((addr_t)core_pd->table_base);
+	::Board::Pic pic { };
+	::Board::Cpu::Sctlr::init();
+	::Board::Cpu::enable_mmu_and_caches((addr_t)core_pd->table_base);
 
 	return 0;
 }

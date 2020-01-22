@@ -28,7 +28,8 @@ long Genode::Vm_space::_map_page(Genode::Cap_sel const &idx,
                                  Genode::addr_t  const virt,
                                  Cache_attribute const cacheability,
                                  bool            const writable,
-                                 bool            const executable)
+                                 bool            const executable,
+                                 bool)
 {
 	seL4_ARM_Page          const service = _idx_to_sel(idx.value());
 	seL4_ARM_PageDirectory const pd      = _pd_sel.value();
@@ -76,7 +77,12 @@ void Genode::Vm_space::unsynchronized_alloc_page_tables(addr_t const start,
 
 		/* 1 MB range - page table */
 		Cap_sel const pt = _alloc_and_map<Page_table_kobj>(virt, map_page_table, phys);
-		_page_table_registry.insert_page_table(virt, pt, phys,
-		                                       PAGE_TABLE_LOG2_SIZE);
+		try {
+			_page_table_registry.insert_page_table(virt, pt, phys,
+			                                       PAGE_TABLE_LOG2_SIZE);
+		} catch (...) {
+			_unmap_and_free(pt, phys);
+			throw;
+		}
 	}
 }

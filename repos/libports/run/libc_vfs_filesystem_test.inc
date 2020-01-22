@@ -20,13 +20,13 @@ if {[have_spec odroid_xu] || [have_spec zynq]} {
 }
 
 # use SD on ARM
-set use_sd_card_drv [expr [have_spec omap4] || [have_spec arndale] || [have_spec pl180]]
+set use_sd_card_drv [expr [have_spec pbxa9]]
 
 # use AHCI on x86
 set use_ahci        [expr [have_spec x86] && ![have_spec linux]]
 
 # use ram_block on Linux
-set use_ram_block   [have_spec linux]
+set use_ram_block   [expr [have_spec linux] || [have_spec rpi3]]
 
 if {[catch { exec which $mkfs_cmd } ]} {
 	puts stderr "Error: $mkfs_cmd not installed, aborting test"; exit }
@@ -122,7 +122,7 @@ append_if $use_ahci config {
 	</start>}
 
 append_if $use_sd_card_drv config {
-	<start name="sd_card_drv">
+	<start name="pbxa9_sd_card_drv">
 		<resource name="RAM" quantum="1M" />
 		<provides><service name="Block"/></provides>
 	</start>
@@ -137,14 +137,14 @@ append_if $use_ram_block config {
 
 append_if $use_vfs_server config "
 	<start name=\"vfs\" caps=\"200\">
-		<resource name=\"RAM\" quantum=\"8M\" />
+		<resource name=\"RAM\" quantum=\"12M\" />
 		<provides><service name=\"File_system\"/></provides>
 		<config>
 			<vfs>
 				<dir name=\"dev\"> <log/> </dir>}
 				$test_vfs_config
 			</vfs>
-			<policy label_prefix=\"test-libc_vfs\" writeable=\"yes\"/>
+			<policy label_prefix=\"test-libc_vfs\" root=\"/\" writeable=\"yes\"/>
 		</config>
 	</start>"
 
@@ -153,6 +153,19 @@ append config {
 }
 
 install_config $config
+
+#
+# Prepare hard-disk image for test (used by Qemu or in RAM)
+#
+
+set disk_image "bin/test.hda"
+set cmd "dd if=/dev/zero of=$disk_image bs=1024 count=65536"
+puts "creating disk image: $cmd"
+catch { exec sh -c $cmd }
+
+set cmd "$mkfs_cmd $mkfs_opts $disk_image"
+puts "formating disk: $cmd"
+catch { exec sh -c $cmd }
 
 #
 # Boot modules
@@ -165,7 +178,7 @@ append boot_modules {
 
 lappend boot_modules {*}$test_boot_modules
 
-lappend_if $use_sd_card_drv  boot_modules sd_card_drv
+lappend_if $use_sd_card_drv  boot_modules pbxa9_sd_card_drv
 lappend_if $use_ram_block    boot_modules test.hda
 
 append_platform_drv_boot_modules
@@ -173,19 +186,6 @@ append_platform_drv_boot_modules
 build_boot_image $boot_modules
 
 puts "#### boot_modules: $boot_modules"
-
-#
-# Execute test case
-#
-
-set disk_image "bin/test.hda"
-set cmd "dd if=/dev/zero of=$disk_image bs=1024 count=65536"
-puts "creating disk image: $cmd"
-catch { exec sh -c $cmd }
-
-set cmd "$mkfs_cmd $mkfs_opts $disk_image"
-puts "formating disk: $cmd"
-catch { exec sh -c $cmd }
 
 #
 # Qemu

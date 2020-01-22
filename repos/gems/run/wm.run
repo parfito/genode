@@ -74,7 +74,9 @@ install_config {
 	<start name="wm" caps="1000">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
-		<provides> <service name="Nitpicker"/> <service name="Report"/> </provides>
+		<provides>
+			<service name="Nitpicker"/> <service name="Report"/> <service name="ROM"/>
+		</provides>
 		<route>
 			<service name="ROM" label="config"> <parent label="wm.config"/> </service>
 			<service name="Nitpicker"> <child name="nitpicker"/> </service>
@@ -151,8 +153,8 @@ close $fd
 
 file copy -force [genode_dir]/repos/gems/recipes/raw/motif_wm/wm.config [run_dir]/genode/
 
-build { app/decorator server/nitpicker server/wm test/nitpicker }
+build { app/window_layouter app/decorator server/nitpicker server/wm test/nitpicker }
 
-build_boot_image { decorator nitpicker wm testnit }
+build_boot_image { window_layouter decorator nitpicker wm testnit }
 
 run_genode_until forever

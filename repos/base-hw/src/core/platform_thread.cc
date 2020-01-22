@@ -51,8 +51,11 @@ Platform_thread::~Platform_thread()
 }
 
 
-void Platform_thread::quota(size_t const quota) {
-	Kernel::thread_quota(_kobj.kernel_object(), quota); }
+void Platform_thread::quota(size_t const quota)
+{
+	_quota = quota;
+	Kernel::thread_quota(*_kobj, quota);
+}
 
 
 Platform_thread::Platform_thread(Label const &label, Native_utcb &utcb)
@@ -86,8 +89,10 @@ Platform_thread::Platform_thread(size_t             const  quota,
 	_pd(nullptr),
 	_pager(nullptr),
 	_utcb_pd_addr((Native_utcb *)utcb),
+	_priority(_scale_priority(virt_prio)),
+	_quota(quota),
 	_main_thread(false),
-	_kobj(true, _priority(virt_prio), quota, _label.string())
+	_kobj(true, _priority, _quota, _label.string())
 {
 	try {
 		_utcb = core_env().pd_session()->alloc(sizeof(Native_utcb), CACHED);
@@ -153,8 +158,8 @@ int Platform_thread::start(void * const ip, void * const sp)
 	}
 
 	/* initialize thread registers */
-	_kobj.kernel_object()->regs->ip = reinterpret_cast<addr_t>(ip);
-	_kobj.kernel_object()->regs->sp = reinterpret_cast<addr_t>(sp);
+	_kobj->regs->ip = reinterpret_cast<addr_t>(ip);
+	_kobj->regs->sp = reinterpret_cast<addr_t>(sp);
 
 	/* start executing new thread */
 	if (!_pd) {
@@ -163,7 +168,7 @@ int Platform_thread::start(void * const ip, void * const sp)
 	}
 
 	unsigned const cpu =
-		_location.valid() ? _location.xpos() : Cpu::primary_id();
+		_location.valid() ? _location.xpos() : 0;
 
 	Native_utcb &utcb = *Thread::myself()->utcb();
 
@@ -174,8 +179,7 @@ int Platform_thread::start(void * const ip, void * const sp)
 		utcb.cap_add(Capability_space::capid(_pd->parent()));
 		utcb.cap_add(Capability_space::capid(_utcb));
 	}
-	Kernel::start_thread(_kobj.kernel_object(), cpu, &_pd->kernel_pd(),
-	                     _utcb_core_addr);
+	Kernel::start_thread(*_kobj, cpu, _pd->kernel_pd(), *_utcb_core_addr);
 	return 0;
 }
 
@@ -184,7 +188,7 @@ void Platform_thread::pager(Pager_object &pager)
 {
 	using namespace Kernel;
 
-	thread_pager(_kobj.kernel_object(), Capability_space::capid(pager.cap()));
+	thread_pager(*_kobj, Capability_space::capid(pager.cap()));
 	_pager = &pager;
 }
 
@@ -200,14 +204,14 @@ Genode::Pager_object &Platform_thread::pager()
 
 Thread_state Platform_thread::state()
 {
-	Thread_state bstate(*_kobj.kernel_object()->regs);
+	Thread_state bstate(*_kobj->regs);
 	return Thread_state(bstate);
 }
 
 
 void Platform_thread::state(Thread_state thread_state)
 {
-	Cpu_state * cstate = static_cast<Cpu_state *>(&*_kobj.kernel_object()->regs);
+	Cpu_state * cstate = static_cast<Cpu_state *>(&*_kobj->regs);
 	*cstate = static_cast<Cpu_state>(thread_state);
 }
 

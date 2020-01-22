@@ -37,10 +37,14 @@ foreach line [split $symbols "\n"] {
 	set type "U"
 
 	# match undefined symbol
-	regexp {^(\w+) U\s*$} $line dummy name
+	if {![regexp {^(\w+) U\s*$} $line dummy name]} {
 
-	# match defined symbol, which does not always feature a size value
-	regexp {^([\w.]+) (\w) \w+ ?(\w*)$} $line dummy name type size_hex
+		# match defined symbol, which does not always feature a value or size
+		if {![regexp {^([\w.]+) (\w) *\w* ?(\w*)$} $line dummy name type size_hex]} {
+			puts stderr "Error: unexpected format of line: $line"
+			exit -1
+		}
+	}
 
 	# decimal symbol size
 	set size_dec [expr 0x0$size_hex]
@@ -84,6 +88,12 @@ foreach line [split $symbols "\n"] {
 	# inline functions.
 	#
 	if {[regexp {W|V} $type] && ($name != $demangled_name)} {
+		set keep 0 }
+
+	#
+	# Drop weak local symbols
+	#
+	if {[regexp {w|v} $type]} {
 		set keep 0 }
 
 	#

@@ -76,12 +76,12 @@ int main(int argc, char *argv[])
 	ssize_t bytes_written = write(pipefd[1], buf, BUF_SIZE);
 
 	if (bytes_written != BUF_SIZE) {
-		fprintf(stderr, "Error writing to pipe");
+		fprintf(stderr, "Error writing to pipe (bytes_written=%zd, BUF_SIZE=%zd)\n",
+		        bytes_written, (size_t)BUF_SIZE);
 		exit(1);
 	}
 
-	/* pthread_join() is not implemented at this time */
-	while (!reader_finished) { }
+	pthread_join(tid, NULL);
 
 	printf("--- test finished ---\n");
 

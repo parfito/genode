@@ -32,12 +32,13 @@ struct Gpt::Writer
 	struct Io_error    : Genode::Exception { };
 	struct Gpt_invalid : Genode::Exception { };
 
-	using sector_t    = Block::sector_t;
+	using sector_t = Block::sector_t;
 
-	Block::Connection          &_block;
-	Block::Session::Operations  _block_ops   {   };
-	Block::sector_t             _block_count { 0 };
-	size_t                      _block_size  { 0 };
+	Block::Connection<> &_block;
+
+	Block::Session::Info const _info        { _block.info() };
+	size_t               const _block_size  { _info.block_size };
+	sector_t             const _block_count { _info.block_count };
 
 	/*
 	 * Blocks available is a crude approximation that _does not_ take
@@ -60,8 +61,6 @@ struct Gpt::Writer
 
 	Util::Number_of_bytes _entry_alignment { 4096u };
 
-	Genode::Xml_node *_config { nullptr };
-
 	void _handle_config(Genode::Xml_node config)
 	{
 		_verbose         = config.attribute_value("verbose",         false);
@@ -82,8 +81,6 @@ struct Gpt::Writer
 		if (_wipe && (_initialize || commands)) {
 			Genode::warning("will exit after wiping");
 		}
-
-		_config = &config;
 	}
 
 	/************
@@ -651,11 +648,9 @@ struct Gpt::Writer
 	 *
 	 * \throw Io_error
 	 */
-	Writer(Block::Connection &block, Genode::Xml_node config) : _block(block)
+	Writer(Block::Connection<> &block, Genode::Xml_node config) : _block(block)
 	{
-		_block.info(&_block_count, &_block_size, &_block_ops);
-
-		if (!_block_ops.supported(Block::Packet_descriptor::WRITE)) {
+		if (!_info.writeable) {
 			Genode::error("cannot write to Block session");
 			throw Io_error();
 		}
@@ -693,15 +688,13 @@ struct Gpt::Writer
 	 * \return  true if actions were executed successfully, otherwise
 	 *          false
 	 */
-	bool execute_actions()
+	bool execute_actions(Genode::Xml_node actions)
 	{
 		if (_wipe) { return _wipe_tables(); }
 
 		if (_initialize) { _initialize_tables(); }
 
 		try {
-			Genode::Xml_node actions = _config->sub_node("actions");
-
 			actions.for_each_sub_node([&] (Genode::Xml_node node) {
 				bool result = false;
 
@@ -737,7 +730,7 @@ struct Main
 
 	enum { TX_BUF_SIZE = 128u << 10, };
 	Genode::Allocator_avl _block_alloc { &_heap };
-	Block::Connection     _block       { _env, &_block_alloc, TX_BUF_SIZE };
+	Block::Connection<>   _block       { _env, &_block_alloc, TX_BUF_SIZE };
 
 	Genode::Constructible<Gpt::Writer> _writer { };
 
@@ -751,14 +744,19 @@ struct Main
 
 		Util::init_random(_heap);
 
+		Genode::Xml_node const config = _config_rom.xml();
+
 		try {
-			_writer.construct(_block, _config_rom.xml());
+			_writer.construct(_block, config);
 		} catch (...) {
 			_env.parent().exit(1);
 			return;
 		}
 
-		bool const success = _writer->execute_actions();
+		bool success = false;
+		config.with_sub_node("actions", [&] (Genode::Xml_node actions) {
+			success = _writer->execute_actions(actions); });
+
 		_env.parent().exit(success ? 0 : 1);
 	}
 };

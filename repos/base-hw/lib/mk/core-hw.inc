@@ -11,7 +11,6 @@ INC_DIR += $(BASE_DIR)/../base-hw/src/core
 INC_DIR += $(BASE_DIR)/src/core/include
 INC_DIR += $(BASE_DIR)/../base-hw/src/include
 INC_DIR += $(BASE_DIR)/src/include
-INC_DIR += $(BASE_DIR)/../base-hw/src/lib
 
 # add C++ sources
 SRC_CC += cpu_session_component.cc
@@ -58,7 +57,6 @@ SRC_CC += kernel/init.cc
 SRC_CC += kernel/ipc_node.cc
 SRC_CC += kernel/irq.cc
 SRC_CC += kernel/kernel.cc
-SRC_CC += kernel/lock.cc
 SRC_CC += kernel/object.cc
 SRC_CC += kernel/signal_receiver.cc
 SRC_CC += kernel/thread.cc

@@ -81,10 +81,12 @@ endif
 
 ifeq ($(findstring arm, $(SPECS)), arm)
 CONFIGURE_ARGS += --host arm-none-eabi
-else
+endif
+ifeq ($(findstring arm_v8, $(SPECS)), arm_v8)
+CONFIGURE_ARGS += --host aarch64-none-elf
+endif
 ifeq ($(findstring x86, $(SPECS)), x86)
 CONFIGURE_ARGS += --host x86_64-pc-elf
-endif
 endif
 
 CONFIGURE_ARGS += --srcdir=$(PKG_DIR)
@@ -109,7 +111,7 @@ LIBTOOLFLAGS = --preserve-dup-deps
 LIBGCC = $(shell $(CC) $(CC_MARCH) -print-libgcc-file-name)
 
 CPPFLAGS += -nostdinc $(INCLUDES)
-CPPFLAGS += -D_GNU_SOURCE=1
+CPPFLAGS += -D_GNU_SOURCE=1 -fPIC
 
 # flags to be used in both CFLAGS and CXXFLAGS
 COMMON_CFLAGS_CXXFLAGS += -ffunction-sections $(CC_OLEVEL) $(CC_MARCH)
@@ -124,8 +126,8 @@ CXXFLAGS += $(COMMON_CFLAGS_CXXFLAGS)
 # in all cases because 'libtool' strips those arguments from the 'LIBS' variable.
 #
 LDLIBS_A  = $(filter %.a, $(sort $(STATIC_LIBS)) $(EXT_OBJECTS) $(LIBGCC))
-LDLIBS_SO = $(addprefix $(PWD)/,$(sort $(SHARED_LIBS)))
-LDLIBS   += $(LDLIBS_A) $(LDLIBS_SO) $(LDLIBS_A)
+LDLIBS_SO = $(addprefix -l:,$(sort $(SHARED_LIBS)))
+LDLIBS   += -L$(PWD) $(LDLIBS_A) $(LDLIBS_SO) $(LDLIBS_A)
 
 #
 # By default, assume that there exists a 'configure' script in the top-level
@@ -143,7 +145,7 @@ Makefile reconfigure: $(MAKEFILE_LIST)
 #
 Makefile reconfigure: env.sh $(SHARED_LIBS)
 	@$(MSG_CONFIG)$(TARGET)
-	$(VERBOSE)source env.sh && $(CONFIGURE_SCRIPT) $(ENV) $(CONFIGURE_ARGS) $(CONFIGURE_OUTPUT_FILTER)
+	$(VERBOSE)source env.sh && $(CONFIGURE_SCRIPT) $(MKENV) $(CONFIGURE_ARGS) $(CONFIGURE_OUTPUT_FILTER)
 
 env.sh:
 	$(VERBOSE)rm -f $@

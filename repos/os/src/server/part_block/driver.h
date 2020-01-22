@@ -37,9 +37,7 @@ struct Block::Block_dispatcher : Genode::Interface
 bool operator== (const Block::Packet_descriptor& p1,
                  const Block::Packet_descriptor& p2)
 {
-	return p1.operation()    == p2.operation()    &&
-	       p1.block_number() == p2.block_number() &&
-	       p1.block_count()  == p2.block_count();
+	return p1.tag().value == p2.tag().value;
 }
 
 
@@ -58,13 +56,13 @@ class Block::Driver
 		public:
 
 			Request(Block_dispatcher &d,
-			        Packet_descriptor &cli,
-			        Packet_descriptor &srv)
+			        Packet_descriptor const &cli,
+			        Packet_descriptor const &srv)
 			: _dispatcher(d), _cli(cli), _srv(srv) {}
 
 			bool handle(Packet_descriptor& reply)
 			{
-				bool ret =  reply == _srv;
+				bool ret = (reply == _srv);
 				if (ret) _dispatcher.dispatch(_cli, reply);
 				return ret;
 			}
@@ -80,12 +78,11 @@ class Block::Driver
 		Genode::Tslab<Request, BLK_SZ> _r_slab;
 		Genode::List<Request>          _r_list { };
 		Genode::Allocator_avl          _block_alloc;
-		Block::Connection              _session;
-		Block::sector_t                _blk_cnt  = 0;
-		Genode::size_t                 _blk_size = 0;
+		Block::Connection<>            _session;
+		Block::Session::Info     const _info { _session.info() };
 		Genode::Signal_handler<Driver> _source_ack;
 		Genode::Signal_handler<Driver> _source_submit;
-		Block::Session::Operations     _ops { };
+		unsigned long                  _tag_cnt { 0 };
 
 		void _ready_to_submit();
 
@@ -107,6 +104,17 @@ class Block::Driver
 			_ready_to_submit();
 		}
 
+		Block::Session::Tag _alloc_tag()
+		{
+			/*
+			 * The wrapping of '_tag_cnt' is no problem because the number
+			 * of consecutive outstanding requests is much lower than the
+			 * value range of tags.
+			 */
+			_tag_cnt++;
+			return Block::Session::Tag { _tag_cnt };
+		}
+
 	public:
 
 		Driver(Genode::Env &env, Genode::Heap &heap)
@@ -115,13 +123,12 @@ class Block::Driver
 		  _session(env, &_block_alloc, 4 * 1024 * 1024),
 		  _source_ack(env.ep(), *this, &Driver::_ack_avail),
 		  _source_submit(env.ep(), *this, &Driver::_ready_to_submit)
-		{
-			_session.info(&_blk_cnt, &_blk_size, &_ops);
-		}
+		{ }
 
-		Genode::size_t blk_size() { return _blk_size; }
-		Genode::size_t blk_cnt()  { return _blk_cnt;  }
-		Session::Operations ops() { return _ops; }
+		Genode::size_t blk_size()  const { return _info.block_size; }
+		Genode::size_t blk_cnt()   const { return _info.block_count; }
+		bool           writeable() const { return _info.writeable; }
+
 		Session_client& session() { return _session;  }
 
 		void work_asynchronously()
@@ -141,15 +148,28 @@ class Block::Driver
 			Block::Packet_descriptor::Opcode op = write
 			    ? Block::Packet_descriptor::WRITE
 			    : Block::Packet_descriptor::READ;
-			Genode::size_t size = _blk_size * cnt;
-			Packet_descriptor p(_session.dma_alloc_packet(size),
-			                    op,  nr, cnt);
+			Genode::size_t const size = _info.block_size * cnt;
+			Packet_descriptor p(_session.alloc_packet(size),
+			                    op,  nr, cnt, _alloc_tag());
 			Request *r = new (&_r_slab) Request(dispatcher, cli, p);
 			_r_list.insert(r);
 
 			if (write)
 				Genode::memcpy(_session.tx()->packet_content(p),
 				               addr, size);
+
+			_session.tx()->submit_packet(p);
+		}
+
+		void sync_all(Block_dispatcher &dispatcher, Packet_descriptor &cli)
+		{
+			if (!_session.tx()->ready_to_submit())
+				throw Block::Session::Tx::Source::Packet_alloc_failed();
+
+			Packet_descriptor const p =
+				Block::Session::sync_all_packet_descriptor(_info, _alloc_tag());
+
+			_r_list.insert(new (&_r_slab) Request(dispatcher, cli, p));
 
 			_session.tx()->submit_packet(p);
 		}

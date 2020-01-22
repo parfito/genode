@@ -2,11 +2,12 @@
  * \brief  VFS File_system server
  * \author Emery Hemingway
  * \author Christian Helmuth
+ * \author Norman Feske
  * \date   2015-08-16
  */
 
 /*
- * Copyright (C) 2015-2017 Genode Labs GmbH
+ * Copyright (C) 2015-2019 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -22,10 +23,10 @@
 #include <root/component.h>
 #include <os/session_policy.h>
 #include <base/allocator_guard.h>
-#include <vfs/dir_file_system.h>
-#include <vfs/file_system_factory.h>
+#include <util/fifo.h>
+#include <vfs/simple_env.h>
 
-/* Local includes */
+/* local includes */
 #include "assert.h"
 #include "node.h"
 
@@ -36,13 +37,11 @@ namespace Vfs_server {
 
 	class Session_resources;
 	class Session_component;
-	class Io_response_handler;
-	class Watch_response_handler;
 	class Vfs_env;
 	class Root;
 
-	typedef Genode::Registered<Session_component> Registered_session;
-	typedef Genode::Registry<Registered_session>  Session_registry;
+	typedef Genode::Fifo<Session_component>         Session_queue;
+	typedef Genode::Entrypoint::Io_progress_handler Io_progress_handler;
 
 	/**
 	 * Convenience utities for parsing quotas
@@ -85,15 +84,32 @@ class Vfs_server::Session_resources
 
 class Vfs_server::Session_component : private Session_resources,
                                       public ::File_system::Session_rpc_object,
-                                      public Session_io_handler
+                                      private Session_queue::Element,
+                                      private Watch_node::Watch_node_response_handler
 {
+	friend Session_queue;
+
 	private:
 
+		Vfs::File_system &_vfs;
+
+		Genode::Entrypoint &_ep;
+
+		Io_progress_handler &_io_progress_handler;
+
+		Packet_stream &_stream { *tx_sink() };
+
+		/* nodes of this session with active jobs or pending acknowledgements */
+		Node_queue _active_nodes { };
+
+		/* global queue of sessions with active jobs */
+		Session_queue &_active_sessions;
+
+		/* collection of open nodes local to this session */
 		Node_space _node_space { };
 
-		Genode::Signal_handler<Session_component> _process_packet_handler;
-
-		Vfs::File_system &_vfs;
+		Genode::Signal_handler<Session_component> _packet_stream_handler {
+			_ep, *this, &Session_component::_handle_packet_stream };
 
 		/*
 		 * The root node needs be allocated with the session struct
@@ -103,13 +119,8 @@ class Vfs_server::Session_component : private Session_resources,
 
 		Genode::Session_label const _label;
 
-		bool const _writable;
+		bool const _writeable;
 
-		/*
-		 * XXX Currently, we have only one packet in backlog, which must finish
-		 *     processing before new packets can be processed.
-		 */
-		Packet_descriptor _backlog_packet { };
 
 		/****************************
 		 ** Handle to node mapping **
@@ -154,224 +165,220 @@ class Vfs_server::Session_component : private Session_resources,
 		 ** Packet-stream processing **
 		 ******************************/
 
-		struct Not_ready { };
-		struct Dont_ack { };
-
-		/**
-		 * Perform packet operation
-		 *
-		 * \throw Not_ready
-		 * \throw Dont_ack
-		 */
-		void _process_packet_op(Packet_descriptor &packet)
+		bool _try_import_jobs_from_submit_queue()
 		{
-			/* assume failure by default */
-			packet.succeeded(false);
+			bool overall_progress = false;
 
-			size_t     const length  = packet.length();
-			seek_off_t const seek    = packet.position();
+			for (;;) {
 
-			if ((packet.length() > packet.size()))
-				return;
+				bool progress_in_iteration = false;
 
-			/* resulting length */
-			size_t res_length = 0;
-			bool succeeded = false;
-
-			switch (packet.operation()) {
-
-			case Packet_descriptor::READ:
-
-				try {
-					_apply(packet.handle(), [&] (Io_node &node) {
-						if (!node.read_ready()) {
-							node.notify_read_ready(true);
-							throw Not_ready();
-						}
-
-						if (node.mode() & READ_ONLY) {
-							res_length = node.read(
-								(char *)tx_sink()->packet_content(packet), length, seek);
-							/* no way to distinguish EOF from unsuccessful
-							   reads, both have res_length == 0 */
-							succeeded = true;
-						}
-					});
-				}
-				catch (Not_ready) { throw; }
-				catch (Operation_incomplete) { throw Not_ready(); }
-				catch (...) { }
-
-				break;
-
-			case Packet_descriptor::WRITE:
-
-				try {
-					_apply(packet.handle(), [&] (Io_node &node) {
-						if (node.mode() & WRITE_ONLY) {
-							res_length = node.write(
-								(char const *)tx_sink()->packet_content(packet), length, seek);
-
-							/* File system session can't handle partial writes */
-							if (res_length != length) {
-								Genode::error("partial write detected ",
-								              res_length, " vs ", length);
-								/* don't acknowledge */
-								throw Dont_ack();
-							}
-							succeeded = true;
-						}
-					});
-				} catch (Operation_incomplete) {
-					throw Not_ready();
-				} catch (...) { }
-				break;
-
-			case Packet_descriptor::READ_READY:
-
-				try {
-					_apply(static_cast<File_handle>(packet.handle().value), [] (File &node) {
-						if (!node.read_ready()) {
-							node.notify_read_ready(true);
-							throw Dont_ack();
-						}
-					});
-					succeeded = true;
-				}
-				catch (Dont_ack) { throw; }
-				catch (...) { }
-				break;
-
-			case Packet_descriptor::CONTENT_CHANGED:
-				Genode::warning("ignoring CONTENT_CHANGED packet from client");
-				throw Dont_ack();
-
-			case Packet_descriptor::SYNC:
-
-				/**
-				 * Sync the VFS and send any pending signals on the node.
-				 */
-				try {
-					_apply(packet.handle(), [&] (Io_node &node) {
-						succeeded = node.sync();
-					});
-				} catch (Operation_incomplete) {
-					throw Not_ready();
-				} catch (...) { Genode::error("SYNC: unhandled exception"); }
-				break;
-			}
-
-			packet.length(res_length);
-			packet.succeeded(succeeded);
-		}
-
-		bool _try_process_packet_op(Packet_descriptor &packet)
-		{
-			try {
-				_process_packet_op(packet);
-				return true;
-			} catch (Not_ready) {
-				_backlog_packet = packet;
-			}
-
-			return false;
-		}
-
-		bool _process_backlog()
-		{
-			/* indicate success if there's no backlog */
-			if (!_backlog_packet.size() &&
-			    (_backlog_packet.operation() != Packet_descriptor::SYNC)) {
-				return true;
-			}
-
-			/* only start processing if acknowledgement is possible */
-			if (!tx_sink()->ready_to_ack())
-				return false;
-
-			if (!_try_process_packet_op(_backlog_packet))
-				return false;
-
-			/*
-			 * The 'acknowledge_packet' function cannot block because we
-			 * checked for 'ready_to_ack' in '_process_packets'.
-			 */
-			tx_sink()->acknowledge_packet(_backlog_packet);
-
-			/* invalidate backlog packet */
-			_backlog_packet = Packet_descriptor();
-
-			return true;
-		}
-
-		bool _process_packet()
-		{
-			Packet_descriptor packet = tx_sink()->get_packet();
-
-			if (!_try_process_packet_op(packet))
-				return false;
-
-			/*
-			 * The 'acknowledge_packet' function cannot block because we
-			 * checked for 'ready_to_ack' in '_process_packets'.
-			 */
-			tx_sink()->acknowledge_packet(packet);
-
-			return true;
-		}
-
-		/**
-		 * Called by signal dispatcher, executed in the context of the main
-		 * thread (not serialized with the RPC functions)
-		 */
-		void _process_packets()
-		{
-			using namespace Genode;
-
-			/*
-			 * XXX Process client backlog before looking at new requests. This
-			 *     limits the number of simultaneously addressed handles (which
-			 *     was also the case before adding the backlog in case of
-			 *     blocking operations).
-			 */
-			if (!_process_backlog())
-				/* backlog not cleared - block for next condition change */
-				return;
-
-			/**
-			 * Process packets in batches, otherwise a client that
-			 * submits packets as fast as they are processed will
-			 * starve the signal handler.
-			 */
-			int quantum = TX_QUEUE_SIZE;
-
-			while (tx_sink()->packet_avail()) {
-				if (--quantum == 0) {
-					/* come back to this later */
-					Signal_transmitter(_process_packet_handler).submit();
+				if (!_stream.packet_avail())
 					break;
+
+				/* ensure that ack for one malformed packet can be returned */
+				if (!_stream.ready_to_ack())
+					break;
+
+				Packet_descriptor packet = _stream.peek_packet();
+
+				auto drop_packet_from_submit_queue = [&] ()
+				{
+					_stream.get_packet();
+
+					overall_progress      = true;
+					progress_in_iteration = true;
+				};
+
+				auto consume_and_ack_invalid_packet = [&] ()
+				{
+					drop_packet_from_submit_queue();
+					packet.succeeded(false);
+					_stream.acknowledge_packet(packet);
+
+					overall_progress      = true;
+					progress_in_iteration = true;
+				};
+
+				/* test for invalid packet */
+				if (packet.length() > packet.size()) {
+					consume_and_ack_invalid_packet();
+					continue;
 				}
 
-				/*
-				 * Make sure that the '_process_packet' function does not
-				 * block.
-				 *
-				 * If the acknowledgement queue is full, we defer packet
-				 * processing until the client processed pending
-				 * acknowledgements and thereby emitted a ready-to-ack
-				 * signal. Otherwise, the call of 'acknowledge_packet()'
-				 * in '_process_packet' would infinitely block the context
-				 * of the main thread. The main thread is however needed
-				 * for receiving any subsequent 'ready-to-ack' signals.
-				 */
-				if (!tx_sink()->ready_to_ack())
-					return;
-
 				try {
-					if (!_process_packet())
-						return;
-				} catch (Dont_ack) { }
+					_apply(packet.handle(), [&] (Io_node &node) {
+
+						if (!node.job_acceptable())
+							return;
+
+						Payload_ptr payload_ptr { _stream.packet_content(packet) };
+
+						switch (node.submit_job(packet, payload_ptr)) {
+
+						case Node::Submit_result::ACCEPTED:
+							if (!node.enqueued())
+								_active_nodes.enqueue(node);
+							drop_packet_from_submit_queue();
+							break;
+
+						case Node::Submit_result::DENIED:
+							consume_and_ack_invalid_packet();
+							break;
+
+						case Node::Submit_result::STALLED:
+							/* keep request packet in submit queue */
+							break;
+						}
+					});
+				}
+				catch (::File_system::Invalid_handle) {
+					consume_and_ack_invalid_packet(); }
+
+				if (!progress_in_iteration)
+					break;
 			}
+			return overall_progress;
+		}
+
+		void _execute_jobs()
+		{
+			/* nodes with jobs that cannot make progress right now */
+			Node_queue requeued_nodes { };
+
+			_active_nodes.dequeue_all([&] (Node &node) {
+
+				if (node.job_in_progress())
+					node.execute_job();
+
+				requeued_nodes.enqueue(node);
+			});
+
+			_active_nodes = requeued_nodes;
+		}
+
+		bool _try_acknowledge_jobs()
+		{
+			bool overall_progress = false;
+
+			for (;;) {
+				if (!_stream.ready_to_ack())
+					break;
+
+				if (_active_nodes.empty())
+					break;
+
+				bool progress_in_iteration = false;
+
+				_active_nodes.dequeue([&] (Node &node) {
+
+					/*
+					 * Deliver only one acknowledgement per iteration to
+					 * re-check the 'ready_to_ack' condition for each
+					 * acknowledgement.
+					 */
+					if (node.acknowledgement_pending()) {
+						_stream.acknowledge_packet(node.dequeue_acknowledgement());
+						progress_in_iteration = true;
+					}
+
+					/*
+					 * If there is still another acknowledgement pending, keep
+					 * the node enqueud to process it in the next iteration.
+					 * This can happen if there is a READ_READY acknowledgement
+					 * in addition to the acknowledgement of an operation.
+					 */
+					if (node.active())
+						_active_nodes.enqueue(node);
+				});
+
+				overall_progress |= progress_in_iteration;
+
+				if (!progress_in_iteration)
+					break;
+			}
+
+			return overall_progress;
+		}
+
+	public:
+
+		enum class Process_packets_result { NONE, PROGRESS, TOO_MUCH_PROGRESS };
+
+		/**
+		 * Called by the global Io_progress_handler as well as the
+		 * session-local packet-stream handler
+		 *
+		 * \return true if progress was made
+		 */
+		Process_packets_result process_packets()
+		{
+			bool overall_progress = false;
+
+			/*
+			 * Upper bound for the number of iterations. When reached,
+			 * cancel the handler and trigger the re-execution via a local
+			 * signal. This gives the config handler and the RPC functions
+			 * a chance to run in situations when the submit queue of the
+			 * packet stream is always saturated.
+			 */
+			unsigned iterations = 200;
+
+			for (;;) {
+
+				if (--iterations == 0)
+					return Process_packets_result::TOO_MUCH_PROGRESS;
+
+				/* true if progress can be made in this iteration */
+				bool progress_in_iteration = false;
+
+				progress_in_iteration |= _try_import_jobs_from_submit_queue();
+
+				_execute_jobs();
+
+				progress_in_iteration |= _try_acknowledge_jobs();
+
+				if (!progress_in_iteration)
+					break;
+
+				overall_progress |= progress_in_iteration;
+			}
+			return overall_progress ? Process_packets_result::PROGRESS
+			                        : Process_packets_result::NONE;
+		}
+
+		bool no_longer_active() const
+		{
+			return Session_queue::Element::enqueued() && _active_nodes.empty();
+		}
+
+		bool no_longer_idle() const
+		{
+			return !Session_queue::Element::enqueued() && !_active_nodes.empty();
+		}
+
+	private:
+
+		/**
+		 * Signal handler called for session-local packet-stream signals
+		 */
+		void _handle_packet_stream()
+		{
+			Process_packets_result const progress = process_packets();
+
+			if (no_longer_idle())
+				_active_sessions.enqueue(*this);
+
+			if (progress == Process_packets_result::TOO_MUCH_PROGRESS)
+				Genode::Signal_transmitter(_packet_stream_handler).submit();
+
+			/*
+			 * The activity of the session may have an unblocking effect on
+			 * other sessions. So we call the global 'Io_progress_handler' to
+			 * attempt the packet processing of all active sessions.
+			 */
+			if (progress == Process_packets_result::PROGRESS)
+				_io_progress_handler.handle_io_progress();
 		}
 
 		/**
@@ -391,6 +398,9 @@ class Vfs_server::Session_component : private Session_resources,
 					throw Invalid_name();
 		}
 
+		/**
+		 * Destroy an open node
+		 */
 		void _close(Node &node)
 		{
 			if (File *file = dynamic_cast<File*>(&node))
@@ -405,40 +415,51 @@ class Vfs_server::Session_component : private Session_resources,
 				destroy(_alloc, &node);
 		}
 
+		/**
+		 * Watch_node::Watch_node_response_handler interface
+		 */
+		void handle_watch_node_response(Watch_node &node) override
+		{
+			if (!node.enqueued())
+				_active_nodes.enqueue(node);
+
+			/*
+			 * The acknowledgement and dequeuing will be delivered by
+			 * 'Session_component::_try_acknowledge_jobs'. Mark the session as
+			 * active to consider it for the acknowledgement handling.
+			 */
+			if (!enqueued())
+				_active_sessions.enqueue(*this);
+		}
+
 	public:
 
 		/**
 		 * Constructor
-		 * \param ep           thead entrypoint for session
-		 * \param cache        node cache
-		 * \param tx_buf_size  shared transmission buffer size
-		 * \param root_path    path root of the session
-		 * \param writable     whether the session can modify files
 		 */
-
-		Session_component(Genode::Env          &env,
-		                  char           const *label,
-		                  Genode::Ram_quota     ram_quota,
-		                  Genode::Cap_quota     cap_quota,
-		                  size_t                tx_buf_size,
-		                  Vfs::File_system     &vfs,
-		                  char           const *root_path,
-		                  bool                  writable)
+		Session_component(Genode::Env         &env,
+		                  char          const *label,
+		                  Genode::Ram_quota    ram_quota,
+		                  Genode::Cap_quota    cap_quota,
+		                  size_t               tx_buf_size,
+		                  Vfs::File_system    &vfs,
+		                  Session_queue       &active_sessions,
+		                  Io_progress_handler &io_progress_handler,
+		                  char          const *root_path,
+		                  bool                 writeable)
 		:
 			Session_resources(env.pd(), env.rm(), ram_quota, cap_quota, tx_buf_size),
 			Session_rpc_object(_packet_ds.cap(), env.rm(), env.ep().rpc_ep()),
-			_process_packet_handler(env.ep(), *this, &Session_component::_process_packets),
 			_vfs(vfs),
+			_ep(env.ep()),
+			_io_progress_handler(io_progress_handler),
+			_active_sessions(active_sessions),
 			_root_path(root_path),
 			_label(label),
-			_writable(writable)
+			_writeable(writeable)
 		{
-			/*
-			 * Register '_process_packets' dispatch function as signal
-			 * handler for packet-avail and ready-to-ack signals.
-			 */
-			_tx.sigh_packet_avail(_process_packet_handler);
-			_tx.sigh_ready_to_ack(_process_packet_handler);
+			_tx.sigh_packet_avail(_packet_stream_handler);
+			_tx.sigh_ready_to_ack(_packet_stream_handler);
 		}
 
 		/**
@@ -446,8 +467,12 @@ class Vfs_server::Session_component : private Session_resources,
 		 */
 		~Session_component()
 		{
+			/* flush and close the open handles */
 			while (_node_space.apply_any<Node>([&] (Node &node) {
 				_close(node); })) { }
+
+			if (enqueued())
+				_active_sessions.remove(*this);
 		}
 
 		/**
@@ -458,53 +483,6 @@ class Vfs_server::Session_component : private Session_resources,
 		void upgrade(Genode::Cap_quota caps) {
 			_cap_guard.upgrade(caps); }
 
-		/*
-		 * Called by the IO response handler for events which are not
-		 * node-specific, for example after 'release_packet()' to signal
-		 * that a previously failed 'alloc_packet()' may succeed now.
-		 */
-		void handle_general_io() {
-			_process_packets(); }
-
-
-		/********************************
-		 **  Node_io_handler interface **
-		 ********************************/
-
-		void handle_node_io(Io_node &node) override
-		{
-			_process_backlog();
-
-			if (!tx_sink()->ready_to_ack()) {
-				Genode::error(
-					"dropping I/O notfication, congested packet buffer to '", _label, "'");
-			}
-
-			if (node.notify_read_ready() && node.read_ready()
-			 && tx_sink()->ready_to_ack()) {
-				Packet_descriptor packet(Packet_descriptor(),
-				                         Node_handle { node.id().value },
-				                         Packet_descriptor::READ_READY,
-				                         0, 0);
-				packet.succeeded(true);
-				tx_sink()->acknowledge_packet(packet);
-				node.notify_read_ready(false);
-			}
-		}
-
-		void handle_node_watch(Watch_node &node) override
-		{
-			if (!tx_sink()->ready_to_ack()) {
-				Genode::error(
-					"dropping watch notfication, congested packet buffer to '", _label, "'");
-			} else {
-				Packet_descriptor packet(Packet_descriptor(),
-				                         Node_handle { node.id().value },
-				                         Packet_descriptor::CONTENT_CHANGED,
-				                         0, 0);
-				tx_sink()->acknowledge_packet(packet);
-			}
-		}
 
 		/***************************
 		 ** File_system interface **
@@ -512,7 +490,7 @@ class Vfs_server::Session_component : private Session_resources,
 
 		Dir_handle dir(::File_system::Path const &path, bool create) override
 		{
-			if (create && (!_writable))
+			if (create && (!_writeable))
 				throw Permission_denied();
 
 			char const *path_str = path.string();
@@ -529,18 +507,22 @@ class Vfs_server::Session_component : private Session_resources,
 			if (!create && !_vfs.directory(path_str))
 				throw Lookup_failed();
 
-			Directory *dir;
-			try { dir = new (_alloc) Directory(_node_space, _vfs, _alloc,
-			                                  *this, path_str, create); }
-			catch (Out_of_memory) { throw Out_of_ram(); }
+			typedef Directory::Session_writeable Writeable;
 
-			return Dir_handle(dir->id().value);
+			Directory &dir = *new (_alloc)
+				Directory(_node_space, _vfs, _alloc, path_str, create,
+				          _writeable ? Writeable::WRITEABLE : Writeable::READ_ONLY);
+
+			if (create)
+				_io_progress_handler.handle_io_progress();
+
+			return Dir_handle(dir.id().value);
 		}
 
 		File_handle file(Dir_handle dir_handle, Name const &name,
 		                 Mode fs_mode, bool create) override
 		{
-			if ((create || (fs_mode & WRITE_ONLY)) && (!_writable))
+			if ((create || (fs_mode & WRITE_ONLY)) && (!_writeable))
 				throw Permission_denied();
 
 			return _apply(dir_handle, [&] (Directory &dir) {
@@ -555,15 +537,15 @@ class Vfs_server::Session_component : private Session_resources,
 
 		Symlink_handle symlink(Dir_handle dir_handle, Name const &name, bool create) override
 		{
-			if (create && !_writable) throw Permission_denied();
+			if (create && !_writeable) throw Permission_denied();
 
 			return _apply(dir_handle, [&] (Directory &dir) {
 				char const *name_str = name.string();
 				_assert_valid_name(name_str);
 
-				return Symlink_handle {dir.symlink(
-					_node_space, _vfs, _alloc, name_str,
-					_writable ? READ_WRITE : READ_ONLY, create).value
+				return Symlink_handle {
+					dir.symlink(_node_space, _vfs, _alloc, name_str,
+					            _writeable ? READ_WRITE : READ_ONLY, create).value
 				};
 			});
 		}
@@ -575,17 +557,14 @@ class Vfs_server::Session_component : private Session_resources,
 			_assert_valid_path(path_str);
 
 			/* re-root the path */
-			Path sub_path(path_str+1, _root_path.base());
+			Path const sub_path(path_str + 1, _root_path.base());
 			path_str = sub_path.base();
 			if (sub_path != "/" && !_vfs.leaf_path(path_str))
 				throw Lookup_failed();
 
-			Node *node;
+			Node &node = *new (_alloc) Node(_node_space, path_str);
 
-			try { node  = new (_alloc) Node(_node_space, path_str, *this); }
-			catch (Out_of_memory) { throw Out_of_ram(); }
-
-			return Node_handle { node->id().value };
+			return Node_handle { node.id().value };
 		}
 
 		Watch_handle watch(::File_system::Path const &path) override
@@ -595,7 +574,7 @@ class Vfs_server::Session_component : private Session_resources,
 			_assert_valid_path(path_str);
 
 			/* re-root the path */
-			Path sub_path(path_str+1, _root_path.base());
+			Path const sub_path(path_str + 1, _root_path.base());
 			path_str = sub_path.base();
 
 			Vfs::Vfs_watch_handle *vfs_handle = nullptr;
@@ -612,19 +591,40 @@ class Vfs_server::Session_component : private Session_resources,
 				throw Out_of_caps();
 			}
 
-			Node *node;
-			try { node  = new (_alloc)
-				Watch_node(_node_space, path_str, *vfs_handle, *this); }
-			catch (Out_of_memory) { throw Out_of_ram(); }
+			Node &node = *new (_alloc)
+				Watch_node(_node_space, path_str, *vfs_handle, *this);
 
-			return Watch_handle { node->id().value };
+			return Watch_handle { node.id().value };
 		}
 
 		void close(Node_handle handle) override
 		{
-			try { _apply_node(handle, [&] (Node &node) {
-				_close(node);
-			}); } catch (::File_system::Invalid_handle) { }
+			/*
+			 * Churn the packet queue so that any pending packets on this
+			 * handle are processed.
+			 */
+			_io_progress_handler.handle_io_progress();
+
+			/*
+			 * Closing a written file or symlink may have triggered a watch handler.
+			 */
+			bool node_modified = false;
+
+			try {
+				_apply_node(handle, [&] (Node &node) {
+
+					if (node.enqueued())
+						_active_nodes.remove(node);
+
+					node_modified = node.modified();
+
+					_close(node);
+				});
+			}
+			catch (::File_system::Invalid_handle) { }
+
+			if (node_modified)
+				_io_progress_handler.handle_io_progress();
 		}
 
 		Status status(Node_handle node_handle) override
@@ -632,40 +632,60 @@ class Vfs_server::Session_component : private Session_resources,
 			::File_system::Status fs_stat;
 
 			_apply_node(node_handle, [&] (Node &node) {
+
 				Directory_service::Stat vfs_stat;
 
 				if (_vfs.stat(node.path(), vfs_stat) != Directory_service::STAT_OK)
 					throw Invalid_handle();
 
-				fs_stat.inode = vfs_stat.inode;
+				auto fs_node_type = [&] (Vfs::Node_type type)
+				{
+					using To = ::File_system::Node_type;
 
-				switch (vfs_stat.mode & (
-					Directory_service::STAT_MODE_DIRECTORY |
-					Directory_service::STAT_MODE_SYMLINK |
-					::File_system::Status::MODE_FILE)) {
+					switch (type) {
+					case Vfs::Node_type::DIRECTORY:          return To::DIRECTORY;
+					case Vfs::Node_type::SYMLINK:            return To::SYMLINK;
+					case Vfs::Node_type::CONTINUOUS_FILE:    return To::CONTINUOUS_FILE;
+					case Vfs::Node_type::TRANSACTIONAL_FILE: return To::TRANSACTIONAL_FILE;
+					};
+					return To::CONTINUOUS_FILE;
+				};
 
-				case Directory_service::STAT_MODE_DIRECTORY:
-					fs_stat.mode = ::File_system::Status::MODE_DIRECTORY;
-					fs_stat.size = _vfs.num_dirent(node.path()) * sizeof(Directory_entry);
-					return;
+				auto fs_node_size = [&] (Vfs::Directory_service::Stat const &vfs_stat)
+				{
+					switch (vfs_stat.type) {
+					case Vfs::Node_type::DIRECTORY:
+						return _vfs.num_dirent(node.path()) * sizeof(Directory_entry);
 
-				case Directory_service::STAT_MODE_SYMLINK:
-					fs_stat.mode = ::File_system::Status::MODE_SYMLINK;
-					break;
+					case Vfs::Node_type::SYMLINK:
+						return 0ULL;
 
-				default: /* Directory_service::STAT_MODE_FILE */
-					fs_stat.mode = ::File_system::Status::MODE_FILE;
-					break;
-				}
+					case Vfs::Node_type::CONTINUOUS_FILE:
+					case Vfs::Node_type::TRANSACTIONAL_FILE:
+						return vfs_stat.size;
+					};
+					return 0ULL;
+				};
 
-				fs_stat.size = vfs_stat.size;
+				fs_stat = ::File_system::Status {
+					.size = fs_node_size(vfs_stat),
+					.type = fs_node_type(vfs_stat.type),
+					.rwx  = {
+						.readable   = vfs_stat.rwx.readable,
+						.writeable  = vfs_stat.rwx.writeable && _writeable,
+						.executable = vfs_stat.rwx.executable },
+
+					.inode = vfs_stat.inode,
+					.modification_time = { vfs_stat.modification_time.value }
+				};
 			});
+
 			return fs_stat;
 		}
 
 		void unlink(Dir_handle dir_handle, Name const &name) override
 		{
-			if (!_writable) throw Permission_denied();
+			if (!_writeable) throw Permission_denied();
 
 			_apply(dir_handle, [&] (Directory &dir) {
 				char const *name_str = name.string();
@@ -674,20 +694,27 @@ class Vfs_server::Session_component : private Session_resources,
 				Path path(name_str, dir.path());
 
 				assert_unlink(_vfs.unlink(path.base()));
-				dir.mark_as_updated();
 			});
+
+			/*
+			 * The unlinking may have triggered a directory-watch handler,
+			 * or a watch handler of the deleted file.
+			 */
+			_io_progress_handler.handle_io_progress();
 		}
 
 		void truncate(File_handle file_handle, file_size_t size) override
 		{
 			_apply(file_handle, [&] (File &file) {
 				file.truncate(size); });
+
+			_io_progress_handler.handle_io_progress();
 		}
 
 		void move(Dir_handle from_dir_handle, Name const &from_name,
 		          Dir_handle to_dir_handle,   Name const &to_name) override
 		{
-			if (!_writable)
+			if (!_writeable)
 				throw Permission_denied();
 
 			char const *from_str = from_name.string();
@@ -702,107 +729,19 @@ class Vfs_server::Session_component : private Session_resources,
 					Path   to_path(  to_str,   to_dir.path());
 
 					assert_rename(_vfs.rename(from_path.base(), to_path.base()));
-
-					from_dir.mark_as_updated();
-					to_dir.mark_as_updated();
 				});
 			});
+
+			/* the move may have triggered a directory watch handler */
+			_io_progress_handler.handle_io_progress();
 		}
 
 		void control(Node_handle, Control) override { }
 };
 
 
-/**
- * Global VFS event handler
- */
-struct Vfs_server::Io_response_handler : Vfs::Io_response_handler
-{
-	Session_registry &_session_registry;
-
-	bool _in_progress  { false };
-	bool _handle_general_io { false };
-
-	Io_response_handler(Session_registry &session_registry)
-	: _session_registry(session_registry) { }
-
-	void handle_io_response(Vfs::Vfs_handle::Context *context) override
-	{
-		if (_in_progress) {
-			/* called recursively, context is nullptr in this case */
-			_handle_general_io = true;
-			return;
-		}
-
-		_in_progress = true;
-
-		if (context)
-			Io_node::node_by_context(*context).handle_io_response();
-		else
-			_handle_general_io = true;
-
-		while (_handle_general_io) {
-			_handle_general_io = false;
-			_session_registry.for_each([ ] (Registered_session &r) {
-				r.handle_general_io();
-			});
-		}
-
-		_in_progress = false;
-	}
-};
-
-
-/**
- * Global VFS watch handler
- */
-struct Vfs_server::Watch_response_handler : Vfs::Watch_response_handler
-{
-	void handle_watch_response(Vfs::Vfs_watch_handle::Context *context) override
-	{
-		if (context)
-			Watch_node::node_by_context(*context).handle_watch_response();
-	}
-};
-
-
-class Vfs_server::Vfs_env final : Vfs::Env
-{
-	private:
-
-		Genode::Env  &_env;
-		Genode::Heap  _heap { &_env.ram(), &_env.rm() };
-
-		Io_response_handler    _io_handler;
-		Watch_response_handler _watch_handler { };
-
-		Vfs::Global_file_system_factory _global_file_system_factory { _heap };
-
-		Vfs::Dir_file_system _root_dir;
-
-	public:
-
-		Vfs_env(Genode::Env &env, Genode::Xml_node config,
-		        Session_registry &sessions)
-		: _env(env), _io_handler(sessions),
-		  _root_dir(*this, config, _global_file_system_factory)
-		{ }
-
-		Genode::Env &env() override { return _env; }
-
-		Genode::Allocator &alloc() override { return _heap; }
-
-		Vfs::File_system &root_dir() override { return _root_dir; }
-
-		Io_response_handler &io_handler() override {
-			return _io_handler; }
-
-		Watch_response_handler &watch_handler() override {
-			return _watch_handler; }
-};
-
-
-class Vfs_server::Root : public Genode::Root_component<Session_component>
+class Vfs_server::Root : public Genode::Root_component<Session_component>,
+                         private Genode::Entrypoint::Io_progress_handler
 {
 	private:
 
@@ -820,37 +759,8 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>
 			}
 		}
 
-		Session_registry _session_registry { };
-
-		Vfs_env _vfs_env { _env, vfs_config(), _session_registry };
-
-		/**
-		 * Global I/O event handler
-		 *
-		 * This is a safe and slow intermediate implementation
-		 * to be replaced with one that only processes handles
-		 * and sessions that await progress.
-		 */
-		struct Io_progress_handler : Genode::Entrypoint::Io_progress_handler
-		{
-			Session_registry &_session_registry;
-
-			Io_progress_handler(Genode::Entrypoint &ep,
-			                    Session_registry   &session_registry)
-			: _session_registry(session_registry)
-			{
-				ep.register_io_progress_handler(*this);
-			}
-
-			/**
-			 * Entrypoint::Io_progress_handler interface
-			 */
-			void handle_io_progress() override
-			{
-				_session_registry.for_each([ ] (Registered_session &r) {
-					r.handle_general_io(); });
-			}
-		} _io_progress_handler { _env.ep(), _session_registry };
+		Genode::Signal_handler<Root> _reactivate_handler {
+			_env.ep(), *this, &Root::handle_io_progress };
 
 		Genode::Signal_handler<Root> _config_handler {
 			_env.ep(), *this, &Root::_config_update };
@@ -859,6 +769,73 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>
 		{
 			_config_rom.update();
 			_vfs_env.root_dir().apply_config(vfs_config());
+		}
+
+		/**
+		 * The VFS uses an internal heap that
+		 * subtracts from the component quota
+		 */
+		Genode::Heap    _vfs_heap { &_env.ram(), &_env.rm() };
+		Vfs::Simple_env _vfs_env  { _env, _vfs_heap, vfs_config() };
+
+		/* sessions with active jobs */
+		Session_queue _active_sessions { };
+
+		/**
+		 * Entrypoint::Io_progress_handler interface
+		 */
+		void handle_io_progress() override
+		{
+			bool yield = false;
+
+			unsigned iterations = 200;
+
+			for (;;) {
+
+				/* limit maximum number of iterations */
+				if (--iterations == 0) {
+					yield = true;
+					break;
+				}
+
+				bool progress = false;
+
+				Session_queue still_active_sessions { };
+
+				_active_sessions.dequeue_all([&] (Session_component &session) {
+
+					typedef Session_component::Process_packets_result Result;
+
+					switch (session.process_packets()) {
+
+					case Result::PROGRESS:
+						progress = true;
+						break;
+
+					case Result::TOO_MUCH_PROGRESS:
+						yield = true;
+						break;
+
+					case Result::NONE:
+						break;
+					}
+
+					if (!session.no_longer_active())
+						still_active_sessions.enqueue(session);
+				});
+
+				_active_sessions = still_active_sessions;
+
+				if (!progress)
+					break;
+			}
+
+			/*
+			 * Submit a local signal to re-schedule another execution of
+			 * 'handle_io_progress' if the loop was exited via 'yield'.
+			 */
+			if (yield)
+				Genode::Signal_transmitter(_reactivate_handler).submit();
 		}
 
 	protected:
@@ -943,11 +920,12 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>
 			}
 
 			Session_component *session = new (md_alloc())
-				Registered_session(_session_registry, _env, label.string(),
-				                   Genode::Ram_quota{ram_quota},
-				                   Genode::Cap_quota{cap_quota},
-				                   tx_buf_size, _vfs_env.root_dir(),
-				                   session_root.base(), writeable);
+				Session_component(_env, label.string(),
+				                  Genode::Ram_quota{ram_quota},
+				                  Genode::Cap_quota{cap_quota},
+				                  tx_buf_size, _vfs_env.root_dir(),
+				                  _active_sessions, *this,
+				                  session_root.base(), writeable);
 
 			auto ram_used = _env.pd().used_ram().value - initial_ram_usage;
 			auto cap_used = _env.pd().used_caps().value - initial_cap_usage;
@@ -963,10 +941,14 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>
 					                ", '", label, "'");
 			}
 
-			Genode::log("session opened for '", label, "' at '", session_root, "'");
 			return session;
 		}
 
+		/**
+		 * Session upgrades are important for the VFS server,
+		 * this allows sessions to open arbitrarily large amounts
+		 * of handles without starving other sessions.
+		 */
 		void _upgrade_session(Session_component *session,
 		                      char        const *args) override
 		{
@@ -986,6 +968,7 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>
 			Root_component<Session_component>(&env.ep().rpc_ep(), &md_alloc),
 			_env(env)
 		{
+			_env.ep().register_io_progress_handler(*this);
 			_config_rom.sigh(_config_handler);
 			env.parent().announce(env.ep().manage(*this));
 		}

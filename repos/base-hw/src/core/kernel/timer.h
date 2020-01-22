@@ -21,8 +21,7 @@
 /* Genode includes */
 #include <util/list.h>
 
-/* Core includes */
-#include <timer_driver.h>
+#include <board.h>
 
 namespace Kernel
 {
@@ -74,9 +73,7 @@ class Kernel::Timer
 				void occurred() override;
 		};
 
-		using Driver = Timer_driver;
-
-		Driver                _driver;
+		Board::Timer          _device;
 		Irq                   _irq;
 		time_t                _time = 0;
 		time_t                _last_timeout_duration;
@@ -94,7 +91,10 @@ class Kernel::Timer
 
 		Timer(Cpu & cpu);
 
-		void schedule_timeout();
+		/**
+		 * Return duration from last call of this function
+		 */
+		time_t schedule_timeout();
 
 		void process_timeouts();
 
@@ -107,8 +107,6 @@ class Kernel::Timer
 		time_t timeout_max_us() const;
 
 		unsigned interrupt_id() const;
-
-		static void init_cpu_local();
 
 		time_t time() const { return _time + _duration(); }
 };

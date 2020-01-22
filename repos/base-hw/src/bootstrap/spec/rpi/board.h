@@ -14,22 +14,11 @@
 #ifndef _SRC__BOOTSTRAP__SPEC__RPI__BOARD_H_
 #define _SRC__BOOTSTRAP__SPEC__RPI__BOARD_H_
 
-#include <drivers/defs/rpi.h>
-#include <drivers/uart/pl011.h>
+#include <hw/spec/arm/rpi_board.h>
 #include <hw/spec/arm/page_table.h>
-
 #include <spec/arm/cpu.h>
 
-namespace Board {
-	using Serial   = Genode::Pl011_uart;
-
-	enum {
-		UART_BASE  = Rpi::PL011_0_MMIO_BASE,
-		UART_CLOCK = Rpi::PL011_0_CLOCK,
-	};
-}
-
-namespace Bootstrap { struct Pic {}; }
+namespace Board { using namespace Hw::Rpi_board; }
 
 
 constexpr unsigned Hw::Page_table::Descriptor_base::_device_tex() {
@@ -40,6 +29,6 @@ constexpr bool Hw::Page_table::Descriptor_base::_smp() { return false; }
 
 
 void Hw::Page_table::_translation_added(unsigned long, unsigned long) {
-	Bootstrap::Cpu::clean_invalidate_data_cache(); }
+	Board::Cpu::clean_invalidate_data_cache(); }
 
 #endif /* _SRC__BOOTSTRAP__SPEC__RPI__BOARD_H_ */

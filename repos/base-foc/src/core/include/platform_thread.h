@@ -18,6 +18,7 @@
 /* Genode includes */
 #include <base/native_capability.h>
 #include <base/thread_state.h>
+#include <base/trace/types.h>
 
 /* core includes */
 #include <pager.h>
@@ -156,6 +157,12 @@ namespace Genode {
 			 */
 			Affinity::Location affinity() const;
 
+			/**
+			 * Make thread to vCPU
+			 */
+			Fiasco::l4_cap_idx_t setup_vcpu(unsigned, Cap_mapping const &,
+			                                Cap_mapping &);
+
 			/************************
 			 ** Accessor functions **
 			 ************************/
@@ -187,7 +194,7 @@ namespace Genode {
 			/**
 			 * Return execution time consumed by the thread
 			 */
-			unsigned long long execution_time() const;
+			Trace::Execution_time execution_time() const;
 
 
 			/*******************************
@@ -199,6 +206,7 @@ namespace Genode {
 			Name                name()        const { return _name;        }
 			bool                core_thread() const { return _core_thread; }
 			addr_t              utcb()        const { return _utcb;        }
+			unsigned            prio()        const { return _prio;        }
 	};
 }
 

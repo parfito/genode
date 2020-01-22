@@ -21,7 +21,6 @@ using namespace Board;
 Bootstrap::Platform::Board::Board()
 : early_ram_regions(Memory_region { RAM_0_BASE, RAM_0_SIZE }),
   core_mmio(Memory_region { IRQ_CONTROLLER_BASE, IRQ_CONTROLLER_SIZE },
-            Memory_region { IRQ_CONTROLLER_VT_CTRL_BASE, IRQ_CONTROLLER_VT_CTRL_SIZE },
             Memory_region { MCT_MMIO_BASE, MCT_MMIO_SIZE },
             Memory_region { UART_2_MMIO_BASE, UART_2_MMIO_SIZE }) { }
 
@@ -124,7 +123,6 @@ static inline void prepare_hypervisor(Genode::addr_t table)
 	Cpu::Sctlr::C::set(sctlr, 1);
 	Cpu::Sctlr::I::set(sctlr, 1);
 	Cpu::Sctlr::V::set(sctlr, 1);
-	Cpu::Sctlr::A::set(sctlr, 0);
 	Cpu::Sctlr::M::set(sctlr, 1);
 	Cpu::Sctlr::Z::set(sctlr, 1);
 	Cpu::Hsctlr::write(sctlr);
@@ -154,8 +152,12 @@ static inline void switch_to_supervisor_mode()
 
 unsigned Bootstrap::Platform::enable_mmu()
 {
+	using namespace ::Board;
+
 	static volatile bool primary_cpu = true;
-	pic.init_cpu_local();
+
+	/* locally initialize interrupt controller */
+	::Board::Pic pic { };
 
 	prepare_nonsecure_world();
 	prepare_hypervisor((addr_t)core_pd->table_base);
@@ -164,21 +166,21 @@ unsigned Bootstrap::Platform::enable_mmu()
 	Cpu::Sctlr::init();
 	Cpu::Cpsr::init();
 
-	cpu.invalidate_data_cache();
+	Cpu::invalidate_data_cache();
 
 	/* primary cpu wakes up all others */
 	if (primary_cpu && NR_OF_CPUS > 1) {
 		primary_cpu = false;
-		cpu.wake_up_all_cpus(&_start_setup_stack);
+		Cpu::wake_up_all_cpus(&_start_setup_stack);
 	}
 
-	cpu.enable_mmu_and_caches((Genode::addr_t)core_pd->table_base);
+	Cpu::enable_mmu_and_caches((Genode::addr_t)core_pd->table_base);
 
 	return Cpu::Mpidr::Aff_0::get(Cpu::Mpidr::read());
 }
 
 
-void Bootstrap::Cpu::wake_up_all_cpus(void * const ip)
+void Board::Cpu::wake_up_all_cpus(void * const ip)
 {
 	*(void * volatile *)Board::IRAM_BASE = ip;
 	asm volatile("dsb; sev;");

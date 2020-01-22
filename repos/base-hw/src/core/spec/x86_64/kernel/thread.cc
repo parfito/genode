@@ -18,7 +18,7 @@
 #include <kernel/thread.h>
 #include <kernel/pd.h>
 
-void Kernel::Thread::Pd_update::execute()
+void Kernel::Thread::Tlb_invalidation::execute()
 {
 	/* invalidate cpu-local TLB */
 	Cpu::invalidate_tlb();
@@ -41,7 +41,8 @@ void Kernel::Thread::proceed(Cpu & cpu)
 {
 	cpu.switch_to(*regs, pd().mmu_regs);
 
-	asm volatile("mov  %0, %%rsp  \n"
+	asm volatile("fxrstor (%1)    \n"
+	             "mov  %0, %%rsp  \n"
 	             "popq %%r8       \n"
 	             "popq %%r9       \n"
 	             "popq %%r10      \n"
@@ -58,7 +59,8 @@ void Kernel::Thread::proceed(Cpu & cpu)
 	             "popq %%rsi      \n"
 	             "popq %%rbp      \n"
 	             "add  $16, %%rsp \n"
-	             "iretq           \n" :: "r" (&regs->r8));
+	             "iretq           \n"
+	             :: "r" (&regs->r8), "r" (regs->fpu_context()));
 }
 
 
@@ -68,9 +70,11 @@ void Kernel::Thread::user_arg_1(Kernel::Call_arg const arg) { regs->rsi = arg; }
 void Kernel::Thread::user_arg_2(Kernel::Call_arg const arg) { regs->rdx = arg; }
 void Kernel::Thread::user_arg_3(Kernel::Call_arg const arg) { regs->rcx = arg; }
 void Kernel::Thread::user_arg_4(Kernel::Call_arg const arg) { regs->r8 = arg; }
+void Kernel::Thread::user_arg_5(Kernel::Call_arg const arg) { regs->r9 = arg; }
 
 Kernel::Call_arg Kernel::Thread::user_arg_0() const { return regs->rdi; }
 Kernel::Call_arg Kernel::Thread::user_arg_1() const { return regs->rsi; }
 Kernel::Call_arg Kernel::Thread::user_arg_2() const { return regs->rdx; }
 Kernel::Call_arg Kernel::Thread::user_arg_3() const { return regs->rcx; }
 Kernel::Call_arg Kernel::Thread::user_arg_4() const { return regs->r8; }
+Kernel::Call_arg Kernel::Thread::user_arg_5() const { return regs->r9; }

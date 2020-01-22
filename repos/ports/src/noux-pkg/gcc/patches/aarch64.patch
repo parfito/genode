@@ -1,0 +1,53 @@
+diff --git a/gcc/config.host b/gcc/config.host
+index b5a4eb1..64a85dc 100644
+--- a/gcc/config.host
++++ b/gcc/config.host
+@@ -99,7 +99,7 @@ case ${host} in
+ esac
+ 
+ case ${host} in
+-  aarch64*-*-freebsd* | aarch64*-*-linux* | aarch64*-*-fuchsia*)
++  aarch64*-*-* | aarch64*-*-linux* | aarch64*-*-fuchsia*)
+     case ${target} in
+       aarch64*-*-*)
+ 	host_extra_gcc_objs="driver-aarch64.o"
+diff --git a/gcc/config/aarch64/aarch64.h b/gcc/config/aarch64/aarch64.h
+index 976f9af..3c150d1 100644
+--- a/gcc/config/aarch64/aarch64.h
++++ b/gcc/config/aarch64/aarch64.h
+@@ -1061,4 +1061,20 @@ extern poly_uint16 aarch64_sve_vg;
+ 
+ #define REGMODE_NATURAL_SIZE(MODE) aarch64_regmode_natural_size (MODE)
+ 
++/* genode.h */
++
++/*
++ * The 'LINK_SPEC' define comprises the rules of how the GCC frontend invokes
++ * the linker.
++ */
++
++#undef LINK_SPEC
++#define LINK_SPEC \
++  "%(shared:-shared) \
++   %{!static:--eh-frame-hdr}"
++
++/* Don't assume anything about the header files.  */
++/* https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57699 */
++#define NO_IMPLICIT_EXTERN_C
++
+ #endif /* GCC_AARCH64_H */
+diff --git a/libgcc/config.host b/libgcc/config.host
+index 5e9cfa8..58af2f0 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -334,8 +334,9 @@ esac
+ 
+ case ${host} in
+ aarch64*-*-elf | aarch64*-*-rtems*)
+-	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o"
++	extra_parts="$extra_parts crtbegin.o crtbeginS.o crtbeginT.o crtend.o crti.o crtn.o"
+ 	extra_parts="$extra_parts crtfastmath.o"
++	tmake_file="$tmake_file t-freebsd t-crtstuff-pic t-libgcc-pic t-eh-dw2-dip t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver"
+ 	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
+ 	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp t-crtfm"
+ 	md_unwind_header=aarch64/aarch64-unwind.h

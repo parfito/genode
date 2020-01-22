@@ -1,3 +1,0 @@
-# kernel to use (foc, hw)
-KERNEL ?= hw
-

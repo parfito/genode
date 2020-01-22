@@ -36,19 +36,19 @@ class Vfs::Block_file_system : public Single_file_system
 		 */
 		Lock _lock { };
 
-		char                       *_block_buffer;
-		unsigned                    _block_buffer_count;
+		char                 *_block_buffer;
+		unsigned              _block_buffer_count;
 
-		Genode::Allocator_avl       _tx_block_alloc { &_env.alloc() };
-		Block::Connection           _block {
+		Genode::Allocator_avl _tx_block_alloc { &_env.alloc() };
+
+		Block::Connection<> _block {
 			_env.env(), &_tx_block_alloc, 128*1024, _label.string() };
-		Genode::size_t              _block_size  = 0;
-		Block::sector_t             _block_count = 0;
-		Block::Session::Operations  _block_ops { };
+
+		Block::Session::Info const _info { _block.info() };
+
 		Block::Session::Tx::Source *_tx_source;
 
-		bool                        _readable;
-		bool                        _writeable;
+		bool _writeable;
 
 		Genode::Signal_receiver           _signal_receiver { };
 		Genode::Signal_context            _signal_context  { };
@@ -70,13 +70,11 @@ class Vfs::Block_file_system : public Single_file_system
 				char                              *_block_buffer;
 				unsigned                          &_block_buffer_count;
 				Genode::Allocator_avl             &_tx_block_alloc;
-				Block::Connection                 &_block;
-				Genode::size_t                    &_block_size;
-				Block::sector_t                   &_block_count;
-				Block::Session::Operations        &_block_ops;
+				Block::Connection<>               &_block;
+				Genode::size_t               const _block_size;
+				Block::sector_t              const _block_count;
 				Block::Session::Tx::Source        *_tx_source;
-				bool                              &_readable;
-				bool                              &_writeable;
+				bool                         const _writeable;
 				Genode::Signal_receiver           &_signal_receiver;
 				Genode::Signal_context            &_signal_context;
 				Genode::Signal_context_capability &_source_submit_cap;
@@ -108,7 +106,7 @@ class Vfs::Block_file_system : public Single_file_system
 						try {
 							Lock::Guard guard(_lock);
 
-							packet = _tx_source->alloc_packet(packet_size);
+							packet = _block.alloc_packet(packet_size);
 							break;
 						} catch (Block::Session::Tx::Source::Packet_alloc_failed) {
 							if (!_tx_source->ready_to_submit())
@@ -154,13 +152,11 @@ class Vfs::Block_file_system : public Single_file_system
 				                 char                              *block_buffer,
 				                 unsigned                          &block_buffer_count,
 				                 Genode::Allocator_avl             &tx_block_alloc,
-				                 Block::Connection                 &block,
-				                 Genode::size_t                    &block_size,
-				                 Block::sector_t                   &block_count,
-				                 Block::Session::Operations        &block_ops,
+				                 Block::Connection<>               &block,
+				                 Genode::size_t                     block_size,
+				                 Block::sector_t                    block_count,
 				                 Block::Session::Tx::Source        *tx_source,
-				                 bool                              &readable,
-				                 bool                              &writeable,
+				                 bool                               writeable,
 				                 Genode::Signal_receiver           &signal_receiver,
 				                 Genode::Signal_context            &signal_context,
 				                 Genode::Signal_context_capability &source_submit_cap)
@@ -174,9 +170,7 @@ class Vfs::Block_file_system : public Single_file_system
 				  _block(block),
 				  _block_size(block_size),
 				  _block_count(block_count),
-				  _block_ops(block_ops),
 				  _tx_source(tx_source),
-				  _readable(readable),
 				  _writeable(writeable),
 				  _signal_receiver(signal_receiver),
 				  _signal_context(signal_context),
@@ -186,11 +180,6 @@ class Vfs::Block_file_system : public Single_file_system
 				Read_result read(char *dst, file_size count,
 			                     file_size &out_count) override
 				{
-					if (!_readable) {
-						Genode::error("block device is not readable");
-						return READ_ERR_INVALID;
-					}
-
 					file_size seek_offset = seek();
 
 					file_size read = 0;
@@ -337,22 +326,18 @@ class Vfs::Block_file_system : public Single_file_system
 
 		Block_file_system(Vfs::Env &env, Genode::Xml_node config)
 		:
-			Single_file_system(NODE_TYPE_BLOCK_DEVICE, name(), config),
+			Single_file_system(Node_type::CONTINUOUS_FILE, name(),
+			                   Node_rwx::rw(), config),
 			_env(env),
 			_label(config.attribute_value("label", Label())),
 			_block_buffer(0),
 			_block_buffer_count(config.attribute_value("block_buffer_count", 1UL)),
 			_tx_source(_block.tx()),
-			_readable(false),
-			_writeable(false),
+			_writeable(_info.writeable),
 			_source_submit_cap(_signal_receiver.manage(&_signal_context))
 		{
-			_block.info(&_block_count, &_block_size, &_block_ops);
-
-			_readable  = _block_ops.supported(Block::Packet_descriptor::READ);
-			_writeable = _block_ops.supported(Block::Packet_descriptor::WRITE);
-
-			_block_buffer = new (_env.alloc()) char[_block_buffer_count * _block_size];
+			_block_buffer = new (_env.alloc())
+				char[_block_buffer_count * _info.block_size];
 
 			_block.tx_channel()->sigh_ready_to_submit(_source_submit_cap);
 		}
@@ -385,12 +370,10 @@ class Vfs::Block_file_system : public Single_file_system
 				                                           _block_buffer_count,
 				                                           _tx_block_alloc,
 				                                           _block,
-				                                           _block_size,
-				                                           _block_count,
-				                                           _block_ops,
+				                                           _info.block_size,
+				                                           _info.block_count,
 				                                           _tx_source,
-				                                           _readable,
-				                                           _writeable,
+				                                           _info.writeable,
 				                                           _signal_receiver,
 				                                           _signal_context,
 				                                           _source_submit_cap);
@@ -403,7 +386,7 @@ class Vfs::Block_file_system : public Single_file_system
 		Stat_result stat(char const *path, Stat &out) override
 		{
 			Stat_result const result = Single_file_system::stat(path, out);
-			out.size = _block_count * _block_size;
+			out.size = _info.block_count * _info.block_size;
 			return result;
 		}
 
@@ -423,7 +406,7 @@ class Vfs::Block_file_system : public Single_file_system
 			switch (opcode) {
 			case IOCTL_OP_DIOCGMEDIASIZE:
 
-				out.diocgmediasize.size = _block_count * _block_size;
+				out.diocgmediasize.size = _info.block_count * _info.block_size;
 				return IOCTL_OK;
 
 			default:

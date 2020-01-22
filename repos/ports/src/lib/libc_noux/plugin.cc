@@ -58,7 +58,8 @@
 
 
 /* libc-internal includes */
-#include <libc_mem_alloc.h>
+#include <internal/mem_alloc.h>
+#include <internal/legacy.h>
 
 
 using Genode::log;
@@ -387,15 +388,39 @@ extern "C" int getrlimit(int resource, struct rlimit *rlim)
  */
 static void _sysio_to_stat_struct(Noux::Sysio const *sysio, struct stat *buf)
 {
-	Genode::memset(buf, 0, sizeof(*buf));
-	buf->st_uid     = sysio->stat_out.st.uid;
-	buf->st_gid     = sysio->stat_out.st.gid;
-	buf->st_mode    = sysio->stat_out.st.mode;
-	buf->st_size    = sysio->stat_out.st.size;
+	unsigned const readable_bits   = S_IRUSR,
+	               writeable_bits  = S_IWUSR,
+	               executable_bits = S_IXUSR;
+
+	auto type = [] (Vfs::Node_type type)
+	{
+		switch (type) {
+		case Vfs::Node_type::DIRECTORY:          return S_IFDIR;
+		case Vfs::Node_type::CONTINUOUS_FILE:    return S_IFREG;
+		case Vfs::Node_type::TRANSACTIONAL_FILE: return S_IFSOCK;
+		case Vfs::Node_type::SYMLINK:            return S_IFLNK;
+		}
+		return 0;
+	};
+
+	Vfs::Directory_service::Stat const &src = sysio->stat_out.st;
+
+	*buf = { };
+
+	buf->st_uid     = 0;
+	buf->st_gid     = 0;
+	buf->st_mode    = (src.rwx.readable   ? readable_bits   : 0)
+	                | (src.rwx.writeable  ? writeable_bits  : 0)
+	                | (src.rwx.executable ? executable_bits : 0)
+	                | type(src.type);
+	buf->st_size    = src.size;
 	buf->st_blksize = FS_BLOCK_SIZE;
-	buf->st_blocks  = (buf->st_size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE;
-	buf->st_ino     = sysio->stat_out.st.inode;
-	buf->st_dev     = sysio->stat_out.st.device;
+	buf->st_blocks  = (src.size + FS_BLOCK_SIZE - 1) / FS_BLOCK_SIZE;
+	buf->st_ino     = src.inode;
+	buf->st_dev     = src.device;
+
+	if (src.modification_time.value != Vfs::Timestamp::INVALID)
+		buf->st_mtime = src.modification_time.value;
 }
 
 
@@ -674,8 +699,8 @@ extern "C" int chmod(char const *path, mode_t mode)
 }
 
 
-extern "C" pid_t _wait4(pid_t pid, int *status, int options,
-                        struct rusage *rusage)
+extern "C" pid_t wait4(pid_t pid, int *status, int options,
+                       struct rusage *rusage)
 {
 	sysio()->wait4_in.pid    = pid;
 	sysio()->wait4_in.nohang = !!(options & WNOHANG);
@@ -696,6 +721,94 @@ extern "C" pid_t _wait4(pid_t pid, int *status, int options,
 
 	return sysio()->wait4_out.pid;
 }
+
+
+extern "C" __attribute__((alias("wait4")))
+pid_t _wait4(pid_t, int *, int, struct rusage *);
+
+
+extern "C" __attribute__((alias("wait4")))
+pid_t __sys_wait4(pid_t, int *, int, struct rusage *);
+
+
+extern "C" pid_t waitpid(pid_t pid, int *istat, int options)
+{
+	return wait4(pid, istat, options, NULL);
+}
+
+
+extern "C" int execve(char const *filename, char *const argv[],
+                      char *const envp[])
+{
+	if (verbose) {
+		log(__func__, ": filename=", filename);
+
+		for (int i = 0; argv[i]; i++)
+			log(__func__, "argv[", i, "]='", Genode::Cstring(argv[i]), "'");
+
+		for (int i = 0; envp[i]; i++)
+			log(__func__, "envp[", i, "]='", Genode::Cstring(envp[i]), "'");
+	}
+
+	Libc::Absolute_path resolved_path;
+	try {
+		Libc::resolve_symlinks(filename, resolved_path);
+	} catch (Libc::Symlink_resolve_error) {
+		return -1;
+	}
+
+	Genode::strncpy(sysio()->execve_in.filename, resolved_path.string(),
+	                sizeof(sysio()->execve_in.filename));
+	if (!serialize_string_array(argv, sysio()->execve_in.args,
+	                            sizeof(sysio()->execve_in.args))) {
+	    error("execve: argument buffer exceeded");
+	    errno = E2BIG;
+	    return -1;
+	}
+
+	/* communicate the current working directory as environment variable */
+
+	size_t noux_cwd_len = Genode::snprintf(sysio()->execve_in.env,
+	                                       sizeof(sysio()->execve_in.env),
+	                                       "NOUX_CWD=");
+
+	if (!getcwd(&(sysio()->execve_in.env[noux_cwd_len]),
+	            sizeof(sysio()->execve_in.env) - noux_cwd_len)) {
+	    error("execve: environment buffer exceeded");
+	    errno = E2BIG;
+	    return -1;
+	}
+
+	noux_cwd_len = strlen(sysio()->execve_in.env) + 1;
+
+	if (!serialize_string_array(envp, &(sysio()->execve_in.env[noux_cwd_len]),
+                               sizeof(sysio()->execve_in.env) - noux_cwd_len)) {
+	    error("execve: environment buffer exceeded");
+	    errno = E2BIG;
+	    return -1;
+	}
+
+	if (!noux_syscall(Noux::Session::SYSCALL_EXECVE)) {
+		warning("exec syscall failed for path \"", filename, "\"");
+		switch (sysio()->error.execve) {
+		case Noux::Sysio::EXECVE_ERR_NO_ENTRY:  errno = ENOENT; break;
+		case Noux::Sysio::EXECVE_ERR_NO_MEMORY: errno = ENOMEM; break;
+		case Noux::Sysio::EXECVE_ERR_NO_EXEC:   errno = ENOEXEC; break;
+		case Noux::Sysio::EXECVE_ERR_ACCESS:    errno = EACCES; break;
+		}
+		return -1;
+	}
+
+	/*
+	 * In the success case, we never return from execve, the execution is
+	 * resumed in the new program.
+	 */
+	Genode::sleep_forever();
+	return 0;
+}
+
+
+extern "C" int _execve(char const *, char *const[], char *const[]) __attribute__((alias("execve")));
 
 
 int getrusage(int who, struct rusage *usage)
@@ -737,6 +850,12 @@ extern "C" int kill(__pid_t pid, int sig)
 	}
 
 	return 0;
+}
+
+
+extern "C" int raise(int sig)
+{
+	return kill(getpid(), sig);
 }
 
 
@@ -839,6 +958,13 @@ extern "C" int gettimeofday(struct timeval *tv, struct timezone *tz)
 
 extern "C" int utimes(const char* path, const struct timeval *times)
 {
+	char * const dst     = sysio()->utimes_in.path;
+	size_t const max_len = sizeof(sysio()->utimes_in.path);
+	Genode::strncpy(dst, path, max_len);
+
+	sysio()->utimes_in.sec  = times ? times->tv_sec  : 0;
+	sysio()->utimes_in.usec = times ? times->tv_usec : 0;
+
 	if (!noux_syscall(Noux::Session::SYSCALL_UTIMES)) {
 		errno = EINVAL;
 		return -1;
@@ -893,10 +1019,7 @@ extern "C" int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 }
 
 
-extern "C" int _sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
-{
-	return sigprocmask(how, set, oldset);
-}
+extern "C" int _sigprocmask(int how, const sigset_t *set, sigset_t *oldset) __attribute__((alias("sigprocmask")));
 
 
 extern "C" int _sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
@@ -919,11 +1042,8 @@ extern "C" int _sigaction(int signum, const struct sigaction *act, struct sigact
 }
 
 
-extern "C" int sigaction(int signum, const struct sigaction *act,
-                         struct sigaction *oldact)
-{
-	return _sigaction(signum, act, oldact);
-}
+extern "C" int        sigaction(int, const struct sigaction *, struct sigaction *) __attribute__((alias("_sigaction")));
+extern "C" int __libc_sigaction(int, const struct sigaction *, struct sigaction *) __attribute__((alias("_sigaction")));
 
 
 /*********************
@@ -969,8 +1089,6 @@ namespace {
 			void init(Genode::Env &);
 
 			bool supports_access(const char *, int)                { return true; }
-			bool supports_execve(char const *, char *const[],
-			                     char *const[])                    { return true; }
 			bool supports_open(char const *, int)                  { return true; }
 			bool supports_stat(char const *)                       { return true; }
 			bool supports_symlink(char const *, char const*)       { return true; }
@@ -989,8 +1107,6 @@ namespace {
 			int close(Libc::File_descriptor *);
 			Libc::File_descriptor *dup(Libc::File_descriptor*);
 			int dup2(Libc::File_descriptor *, Libc::File_descriptor *);
-			int execve(char const *filename, char *const argv[],
-			           char *const envp[]);
 			int fstat(Libc::File_descriptor *, struct stat *);
 			int fsync(Libc::File_descriptor *);
 			int fstatfs(Libc::File_descriptor *, struct statfs *);
@@ -1050,69 +1166,6 @@ namespace {
 
 		errno = ENOENT;
 		return -1;
-	}
-
-
-	int Plugin::execve(char const *filename, char *const argv[],
-	                   char *const envp[])
-	{
-		if (verbose) {
-			log(__func__, ": filename=", filename);
-
-			for (int i = 0; argv[i]; i++)
-				log(__func__, "argv[", i, "]='", Genode::Cstring(argv[i]), "'");
-
-			for (int i = 0; envp[i]; i++)
-				log(__func__, "envp[", i, "]='", Genode::Cstring(envp[i]), "'");
-		}
-
-		Genode::strncpy(sysio()->execve_in.filename, filename, sizeof(sysio()->execve_in.filename));
-		if (!serialize_string_array(argv, sysio()->execve_in.args,
-		                            sizeof(sysio()->execve_in.args))) {
-		    error("execve: argument buffer exceeded");
-		    errno = E2BIG;
-		    return -1;
-		}
-
-		/* communicate the current working directory as environment variable */
-
-		size_t noux_cwd_len = Genode::snprintf(sysio()->execve_in.env,
-		                                       sizeof(sysio()->execve_in.env),
-		                                       "NOUX_CWD=");
-
-		if (!getcwd(&(sysio()->execve_in.env[noux_cwd_len]),
-		            sizeof(sysio()->execve_in.env) - noux_cwd_len)) {
-		    error("execve: environment buffer exceeded");
-		    errno = E2BIG;
-		    return -1;
-		}
-
-		noux_cwd_len = strlen(sysio()->execve_in.env) + 1;
-
-		if (!serialize_string_array(envp, &(sysio()->execve_in.env[noux_cwd_len]),
-                                   sizeof(sysio()->execve_in.env) - noux_cwd_len)) {
-		    error("execve: environment buffer exceeded");
-		    errno = E2BIG;
-		    return -1;
-		}
-
-		if (!noux_syscall(Noux::Session::SYSCALL_EXECVE)) {
-			warning("exec syscall failed for path \"", filename, "\"");
-			switch (sysio()->error.execve) {
-			case Noux::Sysio::EXECVE_ERR_NO_ENTRY:  errno = ENOENT; break;
-			case Noux::Sysio::EXECVE_ERR_NO_MEMORY: errno = ENOMEM; break;
-			case Noux::Sysio::EXECVE_ERR_NO_EXEC:   errno = ENOEXEC; break;
-			case Noux::Sysio::EXECVE_ERR_ACCESS:    errno = EACCES; break;
-			}
-			return -1;
-		}
-
-		/*
-		 * In the success case, we never return from execve, the execution is
-		 * resumed in the new program.
-		 */
-		Genode::sleep_forever();
-		return 0;
 	}
 
 
@@ -1189,8 +1242,10 @@ namespace {
 		Libc::Plugin_context *context = noux_context(sysio()->open_out.fd);
 		Libc::File_descriptor *fd =
 		    Libc::file_descriptor_allocator()->alloc(this, context, sysio()->open_out.fd);
-		if ((flags & O_TRUNC) && (ftruncate(fd, 0) == -1))
+		if ((flags & O_TRUNC) && (ftruncate(fd, 0) == -1)) {
+			Plugin::close(fd);
 			return 0;
+		}
 		return fd;
 	}
 
@@ -1237,7 +1292,7 @@ namespace {
 		if (!buf) { errno = EFAULT; return -1; }
 
 		/* remember original len for the return value */
-		int const orig_count = count;
+		size_t const orig_count = count;
 
 		char *src = (char *)buf;
 		while (count > 0) {
@@ -1262,12 +1317,23 @@ namespace {
 						errno = 0;
 					break;
 				}
+
+				/* try again */
+				bool const retry = (errno == EINTR
+				                 || errno == EAGAIN
+				                 || errno == EWOULDBLOCK);
+				if (errno && retry)
+					continue;
+
+				/* leave writing loop on error */
+				if (errno)
+					break;
 			}
 
 			count -= sysio()->write_out.count;
 			src   += sysio()->write_out.count;
 		}
-		return orig_count;
+		return orig_count - count;
 	}
 
 
@@ -1300,6 +1366,14 @@ namespace {
 						errno = 0;
 					break;
 				}
+
+				/* try again */
+				bool const retry = (errno == EINTR
+				                 || errno == EAGAIN
+				                 || errno == EWOULDBLOCK);
+				if (errno && retry)
+					continue;
+
 				return -1;
 			}
 
@@ -1580,6 +1654,7 @@ namespace {
 		sysio()->fcntl_in.fd = noux_fd(fd->context);
 		switch (cmd) {
 
+		case F_DUPFD_CLOEXEC:
 		case F_DUPFD:
 			{
 				/*
@@ -1660,9 +1735,6 @@ namespace {
 
 		sysio()->dirent_in.fd = noux_fd(fd->context);
 
-		struct dirent *dirent = (struct dirent *)buf;
-		Genode::memset(dirent, 0, sizeof(struct dirent));
-
 		if (!noux_syscall(Noux::Session::SYSCALL_DIRENT)) {
 			switch (sysio()->error.general) {
 
@@ -1675,23 +1747,35 @@ namespace {
 			}
 		}
 
-		switch (sysio()->dirent_out.entry.type) {
-		case Vfs::Directory_service::DIRENT_TYPE_DIRECTORY: dirent->d_type = DT_DIR;  break;
-		case Vfs::Directory_service::DIRENT_TYPE_FILE:      dirent->d_type = DT_REG;  break;
-		case Vfs::Directory_service::DIRENT_TYPE_SYMLINK:   dirent->d_type = DT_LNK;  break;
-		case Vfs::Directory_service::DIRENT_TYPE_FIFO:      dirent->d_type = DT_FIFO; break;
-		case Vfs::Directory_service::DIRENT_TYPE_CHARDEV:   dirent->d_type = DT_CHR; break;
-		case Vfs::Directory_service::DIRENT_TYPE_BLOCKDEV:  dirent->d_type = DT_BLK; break;
-		case Vfs::Directory_service::DIRENT_TYPE_END:       return 0;
-		}
+		using Dirent_type = Vfs::Directory_service::Dirent_type;
 
-		dirent->d_fileno = sysio()->dirent_out.entry.fileno;
-		dirent->d_reclen = sizeof(struct dirent);
+		if (sysio()->dirent_out.entry.type == Dirent_type::END)
+			return 0;
 
-		Genode::strncpy(dirent->d_name, sysio()->dirent_out.entry.name,
-		                sizeof(dirent->d_name));
+		auto d_type = [] (Dirent_type const &type)
+		{
+			switch (sysio()->dirent_out.entry.type) {
+			case Dirent_type::DIRECTORY:          return DT_DIR;
+			case Dirent_type::CONTINUOUS_FILE:    return DT_REG;
+			case Dirent_type::TRANSACTIONAL_FILE: return DT_REG;
+			case Dirent_type::SYMLINK:            return DT_LNK;
+			case Dirent_type::END:                return 0;
+			}
+			return 0;
+		};
 
-		dirent->d_namlen = Genode::strlen(dirent->d_name);
+		struct dirent &dirent = *(struct dirent *)buf;
+
+		dirent = { };
+
+		dirent.d_type   = d_type(sysio()->dirent_out.entry.type);
+		dirent.d_fileno = sysio()->dirent_out.entry.fileno;
+		dirent.d_reclen = sizeof(struct dirent);
+
+		Genode::strncpy(dirent.d_name, sysio()->dirent_out.entry.name,
+		                sizeof(dirent.d_name));
+
+		dirent.d_namlen = Genode::strlen(dirent.d_name);
 
 		*basep += sizeof(struct dirent);
 		return sizeof(struct dirent);

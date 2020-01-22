@@ -95,7 +95,7 @@ struct Igd::Device
 		Timer::Connection &_timer;
 		Timer_delayer(Timer::Connection &timer) : _timer(timer) { }
 
-		void usleep(unsigned us) override { _timer.usleep(us); }
+		void usleep(uint64_t us) override { _timer.usleep(us); }
 
 	} _delayer { _timer };
 
@@ -170,7 +170,8 @@ struct Igd::Device
 			 */
 			_pci.upgrade_ram(size);
 			try {
-				return _pci.alloc_dma_buffer(size);
+				return _pci.with_upgrade([&] () {
+					return _pci.alloc_dma_buffer(size); });
 			}
 			catch (Platform::Out_of_ram) {
 				throw Out_of_ram(); }
@@ -1733,7 +1734,7 @@ class Gpu::Root : public Gpu::Root_component
 					                  session_diag_from_args(args),
 					                  _env.rm(), *md_alloc(), ram_quota,
 					                  *_device);
-			} catch (...) { throw Genode::Service_denied(); }
+			} catch (...) { throw; }
 		}
 
 		void _upgrade_session(Session_component *s, char const *args) override

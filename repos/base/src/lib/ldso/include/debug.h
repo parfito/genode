@@ -103,6 +103,11 @@ struct Linker::Link_map
 
 	static void add(Link_map *map)
 	{
+		/* prevent duplicates */
+		for (Link_map *m = first; m; m = m->next)
+			if (m == map)
+				return;
+
 		map->next = nullptr;
 		if (!first) {
 			first           = map;
@@ -127,6 +132,20 @@ struct Linker::Link_map
 
 			if (map == first)
 				first = map->next;
+	}
+
+	static void make_first(Link_map *map)
+	{
+		remove(map);
+
+		if (first) {
+			first->prev = map;
+		}
+
+		map->prev       = nullptr;
+		map->next       = first;
+		first           = map;
+		Debug::d()->map = map;
 	}
 
 	static void dump()

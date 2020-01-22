@@ -2,7 +2,6 @@
  * \brief  POSIX readers/writer lock (rwlock) implementation
  * \author Alexander Senier
  * \date   2018-01-25
- *
  */
 
 /*
@@ -17,10 +16,17 @@
 #include <base/lock.h>
 #include <base/lock_guard.h>
 #include <base/thread.h>
+#include <libc/allocator.h>
 
-/* Libc includes */
+/* libc includes */
 #include <errno.h>
 #include <pthread.h>
+
+/* libc-internal includes */
+#include <internal/types.h>
+
+using namespace Libc;
+
 
 /*
  * A reader-preferring implementation of a readers-writer lock as described
@@ -38,16 +44,16 @@ extern "C" {
 	{
 		private:
 
-			Genode::Thread *_owner = nullptr;
-			Genode::Lock _nbr_mutex {};
-			Genode::Lock _global_mutex {};
+			Thread *_owner = nullptr;
+			Lock _nbr_mutex {};
+			Lock _global_mutex {};
 			int _nbr = 0;
 
 		public:
 
 			void rdlock()
 			{
-				Genode::Lock_guard<Genode::Lock> guard(_nbr_mutex);
+				Lock_guard<Lock> guard(_nbr_mutex);
 				++_nbr;
 				if (_nbr == 1) {
 					_global_mutex.lock();
@@ -58,14 +64,14 @@ extern "C" {
 			void wrlock()
 			{
 				_global_mutex.lock();
-				_owner = Genode::Thread::myself();
+				_owner = Thread::myself();
 			}
 
 			int unlock()
 			{
 				/* Read lock */
 				if (_owner == nullptr) {
-					Genode::Lock_guard<Genode::Lock> guard(_nbr_mutex);
+					Lock_guard<Lock> guard(_nbr_mutex);
 					_nbr--;
 					if (_nbr == 0) {
 						_owner = nullptr;
@@ -74,8 +80,8 @@ extern "C" {
 					return 0;
 				};
 
-				if (_owner != Genode::Thread::myself()) {
-					Genode::error("Unlocking writer lock owned by other thread");
+				if (_owner != Thread::myself()) {
+					error("Unlocking writer lock owned by other thread");
 					errno = EPERM;
 					return -1;
 				};
@@ -91,26 +97,55 @@ extern "C" {
 	{
 	};
 
+	static int rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr)
+	{
+		static Lock rwlock_init_lock { };
+
+		if (!rwlock)
+			return EINVAL;
+
+		try {
+			Lock::Guard g(rwlock_init_lock);
+			Libc::Allocator alloc { };
+			*rwlock = new (alloc) struct pthread_rwlock();
+			return 0;
+		} catch (...) { return ENOMEM; }
+	}
+
 	int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr)
 	{
-		*rwlock = new struct pthread_rwlock();
-		return 0;
+		return rwlock_init(rwlock, attr);
 	}
 
 	int pthread_rwlock_destroy(pthread_rwlock_t *rwlock)
 	{
-		delete *rwlock;
+		Libc::Allocator alloc { };
+		destroy(alloc, *rwlock);
 		return 0;
 	}
 
 	int pthread_rwlock_rdlock(pthread_rwlock_t * rwlock)
 	{
+		if (!rwlock)
+			return EINVAL;
+
+		if (*rwlock == PTHREAD_RWLOCK_INITIALIZER)
+			if (rwlock_init(rwlock, NULL))
+				return ENOMEM;
+
 		(*rwlock)->rdlock();
 		return 0;
 	}
 
 	int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock)
 	{
+		if (!rwlock)
+			return EINVAL;
+
+		if (*rwlock == PTHREAD_RWLOCK_INITIALIZER)
+			if (rwlock_init(rwlock, NULL))
+				return ENOMEM;
+
 		(*rwlock)->wrlock();
 		return 0;
 	}
@@ -122,7 +157,8 @@ extern "C" {
 
 	int pthread_rwlockattr_init(pthread_rwlockattr_t *attr)
 	{
-		*attr = new struct pthread_rwlockattr();
+		Libc::Allocator alloc { };
+		*attr = new (alloc) struct pthread_rwlockattr();
 		return 0;
 	}
 
@@ -143,7 +179,8 @@ extern "C" {
 
 	int pthread_rwlockattr_destroy(pthread_rwlockattr_t *attr)
 	{
-		delete *attr;
+		Libc::Allocator alloc { };
+		destroy(alloc, *attr);
 		return 0;
 	}
 

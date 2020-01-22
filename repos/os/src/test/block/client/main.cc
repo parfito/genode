@@ -13,10 +13,10 @@
 #include <timer_session/connection.h>
 #include <os/ring_buffer.h>
 
-static Genode::size_t             blk_sz;   /* block size of the device   */
-static Block::sector_t            test_cnt; /* number test blocks         */
-static Block::sector_t            blk_cnt;  /* number of blocks of device */
-static Block::Session::Operations blk_ops;  /* supported operations       */
+static Genode::size_t  blk_sz;     /* block size of the device   */
+static Block::sector_t test_cnt;   /* number test blocks         */
+static Block::sector_t blk_cnt;    /* number of blocks of device */
+static bool            writeable;
 
 
 /**
@@ -65,9 +65,9 @@ class Test : Genode::Interface
 
 	protected:
 
-		Genode::Entrypoint    &_ep;
-		Genode::Allocator_avl  _alloc;
-		Block::Connection      _session;
+		Genode::Entrypoint   &_ep;
+		Genode::Allocator_avl _alloc;
+		Block::Connection<>   _session;
 
 		Genode::Io_signal_handler<Test> _disp_ack;
 		Genode::Io_signal_handler<Test> _disp_submit;
@@ -91,7 +91,7 @@ class Test : Genode::Interface
 		Test(Genode::Env  &env,
 		     Genode::Heap &heap,
 		     Genode::size_t bulk_buffer_size,
-		     unsigned       timeout_ms)
+		     Genode::uint64_t timeout_ms)
 		: _ep(env.ep()),
 		  _alloc(&heap),
 		  _session(env, &_alloc, _shared_buffer_size(bulk_buffer_size)),
@@ -122,7 +122,7 @@ struct Read_test : Test
 {
 	bool done;
 
-	Read_test(Genode::Env &env, Genode::Heap &heap, unsigned timeo_ms)
+	Read_test(Genode::Env &env, Genode::Heap &heap, Genode::uint64_t timeo_ms)
 	: Test(env, heap, BULK_BLK_NR*blk_sz, timeo_ms), done(false) { }
 
 	void perform() override
@@ -140,7 +140,7 @@ struct Read_test : Test
 
 			try {
 				Block::Packet_descriptor p(
-					_session.dma_alloc_packet(cnt*blk_sz),
+					_session.alloc_packet(cnt*blk_sz),
 					Block::Packet_descriptor::READ, nr, cnt);
 				_session.tx()->submit_packet(p);
 			} catch(Block::Session::Tx::Source::Packet_alloc_failed) {
@@ -198,7 +198,7 @@ struct Write_test : Test
 	Req_buffer read_packets  { };
 	Req_buffer write_packets { };
 
-	Write_test(Genode::Env &env, Genode::Heap &heap, unsigned timeo_ms)
+	Write_test(Genode::Env &env, Genode::Heap &heap, Genode::uint64_t timeo_ms)
 	: Test(env, heap, BULK_BLK_NR*blk_sz, timeo_ms)
 	{
 		if (BULK_BLK_NR < BATCH*NR_PER_REQ ||
@@ -241,8 +241,7 @@ struct Write_test : Test
 	{
 		while (!read_packets.empty()) {
 			Block::Packet_descriptor r = read_packets.get();
-			Block::Packet_descriptor w(_session.dma_alloc_packet(r.block_count()
-			                                                     *blk_sz),
+			Block::Packet_descriptor w(_session.alloc_packet(r.block_count()*blk_sz),
 			                    Block::Packet_descriptor::WRITE,
 			                    r.block_number(), r.block_count());
 			signed char *dst = (signed char*)_session.tx()->packet_content(w),
@@ -263,7 +262,7 @@ struct Write_test : Test
 		for (sector_t nr = start, cnt = Genode::min(NR_PER_REQ, end - start); nr < end;
 		     nr += cnt,
 		     cnt = Genode::min<sector_t>(NR_PER_REQ, end-nr)) {
-			Block::Packet_descriptor p(_session.dma_alloc_packet(cnt*blk_sz),
+			Block::Packet_descriptor p(_session.alloc_packet(cnt*blk_sz),
 			                           Block::Packet_descriptor::READ, nr, cnt);
 			_session.tx()->submit_packet(p);
 		}
@@ -281,7 +280,7 @@ struct Write_test : Test
 
 	void perform() override
 	{
-		if (!blk_ops.supported(Block::Packet_descriptor::WRITE))
+		if (!writeable)
 			return;
 
 		Genode::log("read/write/compare block 0 - ", test_cnt - 1,
@@ -333,22 +332,22 @@ struct Violation_test : Test
 
 	int p_in_fly;
 
-	Violation_test(Genode::Env &env, Genode::Heap &heap, unsigned timeo)
+	Violation_test(Genode::Env &env, Genode::Heap &heap, Genode::uint64_t timeo)
 	: Test(env, heap, 20*blk_sz, timeo), p_in_fly(0) {}
 
 	void req(Block::sector_t nr, Genode::size_t cnt, bool write)
 	{
-		Block::Packet_descriptor p(_session.dma_alloc_packet(blk_sz),
-		                            write ? Block::Packet_descriptor::WRITE
-		                                  : Block::Packet_descriptor::READ,
-		                            nr, cnt);
+		Block::Packet_descriptor p(_session.alloc_packet(blk_sz),
+		                           write ? Block::Packet_descriptor::WRITE
+		                                 : Block::Packet_descriptor::READ,
+		                           nr, cnt);
 		_session.tx()->submit_packet(p);
 		p_in_fly++;
 	}
 
 	void perform() override
 	{
-		if (!blk_ops.supported(Block::Packet_descriptor::WRITE))
+		if (!writeable)
 			req(0, 1, true);
 
 		req(blk_cnt,   1, false);
@@ -387,9 +386,6 @@ void perform(Genode::Env &env, Genode::Heap &heap, unsigned timeo_ms = 0)
 
 void Component::construct(Genode::Env &env)
 {
-	/* XXX execute constructors of global statics */
-	env.exec_static_constructors();
-
 	using namespace Genode;
 
 	try {
@@ -402,9 +398,14 @@ void Component::construct(Genode::Env &env)
 		 * whether closing and opening again works for the driver
 		 */
 		{
-			Allocator_avl     alloc(&heap);
-			Block::Connection blk(env, &alloc);
-			blk.info(&blk_cnt, &blk_sz, &blk_ops);
+			Allocator_avl       alloc(&heap);
+			Block::Connection<> blk(env, &alloc);
+
+			Block::Session::Info const info { blk.info() };
+
+			blk_sz    = info.block_size;
+			blk_cnt   = info.block_count;
+			writeable = info.writeable;
 		}
 
 		try {

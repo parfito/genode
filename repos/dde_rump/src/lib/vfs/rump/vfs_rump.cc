@@ -91,6 +91,8 @@ class Vfs::Rump_file_system : public File_system
 				Genode::error("Rump_vfs_handle::write() called");
 				return WRITE_ERR_INVALID;
 			}
+
+			virtual void update_modification_timestamp(Vfs::Timestamp) { }
 		};
 
 		class Rump_vfs_file_handle :
@@ -163,6 +165,17 @@ class Vfs::Rump_file_system : public File_system
 					out_count = n;
 					return WRITE_OK;
 				}
+
+				void update_modification_timestamp(Vfs::Timestamp time) override
+				{
+					struct timespec ts[2] = {
+						{ .tv_sec = 0,          .tv_nsec = 0 },
+						{ .tv_sec = time.value, .tv_nsec = 0 }
+					};
+
+					/* silently igore error */
+					rump_sys_futimens(_fd, (const timespec*)&ts);
+				}
 		};
 
 		class Rump_vfs_dir_handle : public Rump_vfs_handle
@@ -181,28 +194,31 @@ class Vfs::Rump_file_system : public File_system
 					 * We cannot use 'd_type' member of 'dirent' here since the EXT2
 					 * implementation sets the type to unkown. Hence we use stat.
 					 */
-					struct stat s;
+					struct stat s { };
 					rump_sys_lstat(path, &s);
 
-					vfs_dir.fileno = s.st_ino;
+					auto dirent_type = [] (unsigned mode)
+					{
+						if (S_ISREG (mode)) return Dirent_type::CONTINUOUS_FILE;
+						if (S_ISDIR (mode)) return Dirent_type::DIRECTORY;
+						if (S_ISLNK (mode)) return Dirent_type::SYMLINK;
+						if (S_ISBLK (mode)) return Dirent_type::CONTINUOUS_FILE;
+						if (S_ISCHR (mode)) return Dirent_type::CONTINUOUS_FILE;
+						if (S_ISFIFO(mode)) return Dirent_type::CONTINUOUS_FILE;
 
-					if (S_ISREG(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_FILE;
-					else if (S_ISDIR(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_DIRECTORY;
-					else if (S_ISLNK(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_SYMLINK;
-					else if (S_ISBLK(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_BLOCKDEV;
-					else if (S_ISCHR(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_CHARDEV;
-					else if (S_ISFIFO(s.st_mode))
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_FIFO;
-					else
-						vfs_dir.type = Dirent_type::DIRENT_TYPE_FILE;
+						return Dirent_type::END;
+					};
 
-					strncpy(vfs_dir.name, dent->d_name, sizeof(Dirent::name));
+					Node_rwx const rwx { .readable   = true,
+					                     .writeable  = true,
+					                     .executable = (s.st_mode & S_IXUSR) };
 
+					vfs_dir = {
+						.fileno = s.st_ino,
+						.type   = dirent_type(s.st_mode),
+						.rwx    = rwx,
+						.name   = { dent->d_name }
+					};
 					return READ_OK;
 				}
 
@@ -342,16 +358,23 @@ class Vfs::Rump_file_system : public File_system
 			}
 		};
 
-		/**
-		 * We define our own fs arg structure to fit all sizes, we assume that 'fspec'
-		 * is the only valid argument and all other fields are unused.
+		/*
+		 * Must fit 'struct msdosfs_args' and 'struct ufs_args'. Needed to
+		 * pass mount flags the file-system drivers.
 		 */
 		struct fs_args
 		{
 			char *fspec;
-			char  pad[164];
 
-			fs_args() { Genode::memset(pad, 0, sizeof(pad)); }
+			/* unused */
+			struct export_args30 _pad1;
+			uid_t                _uid;
+			gid_t                _gid;
+			mode_t               _mask;
+
+			int flags;
+
+			char _pad[164];
 		};
 
 		static bool _check_type(char const *type)
@@ -383,7 +406,7 @@ class Vfs::Rump_file_system : public File_system
 		{
 			for (Rump_watch_handle *h = _watchers.first(); h; h = h->next()) {
 				if (h->kqueue_check())
-					_env.watch_handler().handle_watch_response(h->context());
+					h->watch_response();
 			}
 		}
 
@@ -403,7 +426,13 @@ class Vfs::Rump_file_system : public File_system
 			}
 
 			/* mount into extra-terrestrial-file system */
-			struct fs_args args;
+			struct fs_args args { };
+
+			if (fs_type == "msdos" && config.attribute_value("gemdos", false)) {
+				enum { MSDOSFSMNT_GEMDOSFS = 8 };
+				args.flags |= MSDOSFSMNT_GEMDOSFS;
+			}
+
 			int opts = config.attribute_value("writeable", true) ?
 				0 : RUMP_MNT_RDONLY;
 
@@ -670,15 +699,28 @@ class Vfs::Rump_file_system : public File_system
 
 		Stat_result stat(char const *path, Stat &stat)
 		{
-			struct stat sb;
+			struct stat sb { };
 			if (rump_sys_lstat(path, &sb) != 0) return STAT_ERR_NO_ENTRY;
 
-			stat.size   = sb.st_size;
-			stat.mode   = sb.st_mode;
-			stat.uid    = sb.st_uid;
-			stat.gid    = sb.st_gid;
-			stat.inode  = sb.st_ino;
-			stat.device = sb.st_dev;
+			auto type = [] (unsigned mode)
+			{
+				if (S_ISDIR(mode)) return Node_type::DIRECTORY;
+				if (S_ISLNK(mode)) return Node_type::SYMLINK;
+
+				return Node_type::CONTINUOUS_FILE;
+			};
+
+			stat = {
+				.size   = (file_size)sb.st_size,
+				.type   = type(sb.st_mode),
+				.rwx    = { .readable   = true,
+				            .writeable  = true,
+				            .executable = (sb.st_mode & S_IXUSR) },
+				.inode  = sb.st_ino,
+				.device = sb.st_dev,
+
+				.modification_time = { 0 }
+			};
 
 			return STAT_OK;
 		}
@@ -792,6 +834,12 @@ class Vfs::Rump_file_system : public File_system
 			if (handle && handle->modifying())
 				_notify_files();
 			return SYNC_OK;
+		}
+
+		bool update_modification_timestamp(Vfs_handle *vfs_handle,
+		                                   Vfs::Timestamp ts)
+		{
+			return true;
 		}
 };
 

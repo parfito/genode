@@ -127,10 +127,17 @@ class Genode::Vm_space
 
 		Leaf_cnode _vm_cnodes[NUM_LEAF_CNODES];
 
+	public:
+
 		/**
 		 * Allocator for the selectors within '_vm_cnodes'
 		 */
 		using Selector_allocator = Bit_allocator<1UL << NUM_VM_SEL_LOG2>;
+
+		class Alloc_page_table_failed : Exception { };
+
+	private:
+
 		Selector_allocator _sel_alloc { };
 
 		/**
@@ -157,7 +164,8 @@ class Genode::Vm_space
 		addr_t _idx_to_sel(addr_t idx) const { return (_id << 20) | idx; }
 
 
-		void _flush(bool const flush_support)
+		template <typename FN>
+		void _flush(bool const flush_support, FN const &fn)
 		{
 			if (!flush_support) {
 				warning("mapping cache full, but can't flush");
@@ -167,38 +175,18 @@ class Genode::Vm_space
 			warning("flush page table entries - mapping cache full - PD: ",
 			        _pd_label.string());
 
-			_page_table_registry.flush_pages([&] (Cap_sel const &idx,
-			                                      addr_t const v_addr)
-			{
-				/* XXX - INITIAL_IPC_BUFFER can't be re-mapped currently */
-				if (v_addr == 0x1000)
-					return false;
-				/* XXX - UTCB can't be re-mapped currently */
-				if (stack_area_virtual_base() <= v_addr
-				    && (v_addr < stack_area_virtual_base() +
-				                 stack_area_virtual_size())
-				    && !((v_addr + 0x1000) & (stack_virtual_size() - 1)))
-						return false;
+			_page_table_registry.flush_pages(fn);
 
-				long err = _unmap_page(idx);
-				if (err != seL4_NoError)
-					error("unmap failed, idx=", idx, " res=", err);
-
-				_leaf_cnode(idx.value()).remove(_leaf_cnode_entry(idx.value()));
-
-				_sel_alloc.free(idx.value());
-
-				return true;
-			});
 		}
 
 
-		bool _map_frame(addr_t const from_phys, addr_t const to_virt,
+		template <typename FN>
+		bool _map_frame(addr_t const from_phys, addr_t const to_dest,
 		                Cache_attribute const cacheability,
 		                bool const writable, bool const executable,
-		                bool const flush_support)
+		                bool const flush_support, bool guest, FN const &fn)
 		{
-			if (_page_table_registry.page_frame_at(to_virt)) {
+			if (_page_table_registry.page_frame_at(to_dest)) {
 				/*
 				 * Valid behaviour if multiple threads concurrently
 				 * causing the same page-fault. For the first thread the
@@ -207,7 +195,7 @@ class Genode::Vm_space
 				 * wasting of resources (idx selectors, creating kernel
 				 * capabilities, causing kernel warning ...).
 				 */
-				return false;
+				return true;
 			}
 			/* allocate page-table-entry selector */
 			addr_t pte_idx;
@@ -215,7 +203,7 @@ class Genode::Vm_space
 			catch (Selector_allocator::Out_of_indices) {
 
 				/* free all page-table-entry selectors and retry once */
-				_flush(flush_support);
+				_flush(flush_support, fn);
 				pte_idx = _sel_alloc.alloc();
 			}
 
@@ -230,22 +218,22 @@ class Genode::Vm_space
 			                          Cnode_index(_leaf_cnode_entry(pte_idx)));
 
 			/* remember relationship between pte_sel and the virtual address */
-			try { _page_table_registry.insert_page_frame(to_virt, Cap_sel(pte_idx)); }
+			try { _page_table_registry.insert_page_frame(to_dest, Cap_sel(pte_idx)); }
 			catch (Page_table_registry::Mapping_cache_full) {
 
 				/* free all entries of mapping cache and re-try once */
-				_flush(flush_support);
-				_page_table_registry.insert_page_frame(to_virt, Cap_sel(pte_idx));
+				_flush(flush_support, fn);
+				_page_table_registry.insert_page_frame(to_dest, Cap_sel(pte_idx));
 			}
 
 			/*
 			 * Insert copy of page-frame selector into page table
 			 */
-			long ret = _map_page(Cap_sel(pte_idx), to_virt, cacheability,
-			                     writable, executable);
+			long ret = _map_page(Cap_sel(pte_idx), to_dest, cacheability,
+			                     writable, executable, guest);
 			if (ret != seL4_NoError) {
 				error("seL4_*_Page_Map ", Hex(from_phys), "->",
-				      Hex(to_virt), " returned ", ret);
+				      Hex(to_dest), " returned ", ret);
 				return false;
 			}
 			return true;
@@ -256,12 +244,10 @@ class Genode::Vm_space
 		 */
 		long _map_page(Genode::Cap_sel const &idx, Genode::addr_t const virt,
 		               Cache_attribute const cacheability, bool const write,
-		               bool const writable);
+		               bool const writable, bool guest);
 		long _unmap_page(Genode::Cap_sel const &idx);
 		long _invalidate_page(Genode::Cap_sel const &, seL4_Word const,
 		                      seL4_Word const);
-
-		class Alloc_page_table_failed : Exception { };
 
 		/**
 		 * Allocate and install page structures for the protection domain.
@@ -294,6 +280,15 @@ class Genode::Vm_space
 				      result);
 
 			return Cap_sel(idx);
+		}
+
+		void _unmap_and_free(Cap_sel const idx, addr_t const paddr)
+		{
+			_leaf_cnode(idx.value()).remove(idx);
+
+			_sel_alloc.free(idx.value());
+
+			Untyped_memory::free_page(_phys_alloc, paddr);
 		}
 
 	public:
@@ -367,12 +362,7 @@ class Genode::Vm_space
 
 				return true;
 			}, [&] (Cap_sel const &idx, addr_t const paddr) {
-
-				_leaf_cnode(idx.value()).remove(idx);
-
-				_sel_alloc.free(idx.value());
-
-				Untyped_memory::free_page(_phys_alloc, paddr);
+				_unmap_and_free(idx, paddr);
 			});
 
 			for (unsigned i = 0; i < NUM_LEAF_CNODES; i++) {
@@ -393,6 +383,29 @@ class Genode::Vm_space
 		         size_t const num_pages, Cache_attribute const cacheability,
 		         bool const writable, bool const executable, bool flush_support)
 		{
+			auto fn_unmap = [&] (Cap_sel const &idx, addr_t const v_addr)
+			{
+				/* XXX - INITIAL_IPC_BUFFER can't be re-mapped currently */
+				if (v_addr == 0x1000)
+					return false;
+				/* XXX - UTCB can't be re-mapped currently */
+				if (stack_area_virtual_base() <= v_addr
+				    && (v_addr < stack_area_virtual_base() +
+				                 stack_area_virtual_size())
+				    && !((v_addr + 0x1000) & (stack_virtual_size() - 1)))
+						return false;
+
+				long err = _unmap_page(idx);
+				if (err != seL4_NoError)
+					error("unmap failed, idx=", idx, " res=", err);
+
+				_leaf_cnode(idx.value()).remove(_leaf_cnode_entry(idx.value()));
+
+				_sel_alloc.free(idx.value());
+
+				return true;
+			};
+
 			Lock::Guard guard(_lock);
 
 			bool ok = true;
@@ -402,7 +415,8 @@ class Genode::Vm_space
 
 				if (_map_frame(from_phys + offset, to_virt + offset,
 				               cacheability, writable, executable,
-				               flush_support))
+				               flush_support, false /* host page table */,
+				               fn_unmap))
 					continue;
 
 				ok = false;
@@ -413,6 +427,34 @@ class Genode::Vm_space
 			}
 
 			return ok;
+		}
+
+		void map_guest(addr_t const from_phys, addr_t const guest_phys,
+		               size_t const num_pages, Cache_attribute const cacheability,
+		               bool const writable, bool const executable, bool flush_support)
+		{
+			auto fn_unmap = [&] (Cap_sel const &idx, addr_t const) {
+				long err = _unmap_page(idx);
+				if (err != seL4_NoError)
+					error("unmap failed, idx=", idx, " res=", err);
+
+				_leaf_cnode(idx.value()).remove(_leaf_cnode_entry(idx.value()));
+
+				_sel_alloc.free(idx.value());
+
+				return true;
+			};
+
+			Lock::Guard guard(_lock);
+
+			for (size_t i = 0; i < num_pages; i++) {
+				off_t const offset = i << get_page_size_log2();
+
+				_map_frame(from_phys + offset, guest_phys + offset,
+				           cacheability, writable, executable,
+				           flush_support, true /* guest page table */,
+				           fn_unmap);
+			}
 		}
 
 		bool unmap(addr_t const virt, size_t const num_pages,
@@ -453,10 +495,18 @@ class Genode::Vm_space
 		void unsynchronized_alloc_page_tables(addr_t const start,
 		                                      addr_t const size);
 
+		void unsynchronized_alloc_guest_page_tables(addr_t, addr_t);
+
 		void alloc_page_tables(addr_t const start, addr_t const size)
 		{
 			Lock::Guard guard(_lock);
 			unsynchronized_alloc_page_tables(start, size);
+		}
+
+		void alloc_guest_page_tables(addr_t const start, addr_t const size)
+		{
+			Lock::Guard guard(_lock);
+			unsynchronized_alloc_guest_page_tables(start, size);
 		}
 
 		Session_label const & pd_label() const { return _pd_label; }

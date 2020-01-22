@@ -14,7 +14,7 @@
 
 #include <spec/arm/cpu.h>
 
-void Bootstrap::Cpu::enable_mmu_and_caches(Genode::addr_t table)
+void Board::Cpu::enable_mmu_and_caches(Genode::addr_t table)
 {
 	/* invalidate TLB */
 	Tlbiall::write(0);
@@ -54,11 +54,14 @@ void Bootstrap::Cpu::enable_mmu_and_caches(Genode::addr_t table)
 	Ttbcr::Eae::set(ttbcr, 1);
 	Ttbcr::write(ttbcr);
 
+	/* toggle smp bit */
+	Actlr::access_t actlr = Actlr::read();
+	Actlr::write(actlr | (1 << 6));
+
 	Sctlr::access_t sctlr = Sctlr::read();
 	Sctlr::C::set(sctlr, 1);
 	Sctlr::I::set(sctlr, 1);
 	Sctlr::V::set(sctlr, 1);
-	Sctlr::A::set(sctlr, 0);
 	Sctlr::M::set(sctlr, 1);
 	Sctlr::Z::set(sctlr, 1);
 	Sctlr::write(sctlr);

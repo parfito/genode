@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2011-2017 Genode Labs GmbH
+ * Copyright (C) 2011-2019 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -125,12 +125,12 @@ class Vfs::Dir_file_system : public File_system
 			}
 
 			/**
-			 * Propagate the handle context to each sub-handle
+			 * Propagate the response handler to each sub-handle
 			 */
-			void context(Context *ctx) override
+			void handler(Watch_response_handler *h) override
 			{
 				handle_registry.for_each( [&] (Watch_handle_element &elem) {
-					elem.watch_handle.context(ctx); } );
+					elem.watch_handle.handler(h); } );
 			}
 		};
 
@@ -313,8 +313,9 @@ class Vfs::Dir_file_system : public File_system
 					index = index - base;
 					vfs_handle.seek(index * sizeof(Dirent));
 
-					/* forward the handle context */
-					vfs_handle.context = dir_vfs_handle->context;
+					/* forward the response handler */
+					dir_vfs_handle->apply_handler([&] (Vfs::Io_response_handler &h) {
+						vfs_handle.handler(&h); });
 
 					result = vfs_handle.fs().queue_read(&vfs_handle, sizeof(Dirent));
 				}
@@ -342,8 +343,8 @@ class Vfs::Dir_file_system : public File_system
 				if (count < sizeof(Dirent))
 					return READ_ERR_INVALID;
 
-				Dirent *dirent = (Dirent*)dst;
-				*dirent = Dirent();
+				Dirent &dirent = *(Dirent*)dst;
+				dirent = Dirent { };
 
 				out_count = sizeof(Dirent);
 
@@ -455,12 +456,14 @@ class Vfs::Dir_file_system : public File_system
 			 * current directory.
 			 */
 			if (strlen(path) == 0 || _top_dir(path)) {
-				out.size   = 0;
-				out.mode   = STAT_MODE_DIRECTORY | 0755;
-				out.uid    = 0;
-				out.gid    = 0;
-				out.inode  = 1;
-				out.device = (Genode::addr_t)this;
+				out = {
+					.size              = 0,
+					.type              = Node_type::DIRECTORY,
+					.rwx               = Node_rwx::rwx(),
+					.inode             = 1,
+					.device            = (Genode::addr_t)this,
+					.modification_time = { Vfs::Timestamp::INVALID },
+				};
 				return STAT_OK;
 			}
 
@@ -901,16 +904,28 @@ class Vfs::Dir_file_system : public File_system
 				return _complete_read_of_file_systems(dir_vfs_handle, dst, count, out_count);
 
 			if (_top_dir(dir_vfs_handle->path.base())) {
-				Dirent *dirent = (Dirent*)dst;
-				file_offset index = vfs_handle->seek() / sizeof(Dirent);
+
+				Dirent &dirent = *(Dirent*)dst;
+
+				file_offset const index = vfs_handle->seek() / sizeof(Dirent);
 
 				if (index == 0) {
-					strncpy(dirent->name, _name.string(), sizeof(dirent->name));
 
-					dirent->type = DIRENT_TYPE_DIRECTORY;
-					dirent->fileno = 1;
+					dirent = {
+						.fileno = 1,
+						.type   = Dirent_type::DIRECTORY,
+						.rwx    = Node_rwx::rwx(),
+						.name   = { _name.string() }
+					};
+
 				} else {
-					dirent->type = DIRENT_TYPE_END;
+
+					dirent = {
+						.fileno = 0,
+						.type   = Dirent_type::END,
+						.rwx    = { },
+						.name   = { }
+					};
 				}
 
 				out_count = sizeof(Dirent);
@@ -950,8 +965,9 @@ class Vfs::Dir_file_system : public File_system
 				static_cast<Dir_vfs_handle*>(vfs_handle);
 
 			auto f = [&result, dir_vfs_handle] (Dir_vfs_handle::Subdir_handle_element &e) {
-				/* forward the handle context */
-				e.vfs_handle.context = dir_vfs_handle->context;
+				/* forward the response handler */
+				dir_vfs_handle->apply_handler([&] (Io_response_handler &h) {
+					e.vfs_handle.handler(&h); });
 				e.synced = false;
 
 				if (!e.vfs_handle.fs().queue_sync(&e.vfs_handle)) {

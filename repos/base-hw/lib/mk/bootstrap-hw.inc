@@ -17,13 +17,13 @@ SRC_CC  += lib/base/heap.cc
 SRC_CC  += lib/base/registry.cc
 SRC_CC  += lib/base/log.cc
 SRC_CC  += lib/base/output.cc
+SRC_CC  += lib/base/raw_output.cc
 SRC_CC  += lib/base/slab.cc
 SRC_CC  += lib/base/sleep.cc
 SRC_CC  += lib/base/sliced_heap.cc
 SRC_CC  += lib/startup/_main.cc
 
 INC_DIR += $(HW_DIR)/src/bootstrap
-INC_DIR += $(HW_DIR)/src/lib
 INC_DIR += $(HW_DIR)/src/include
 INC_DIR += $(BASE_DIR)/src/include
 INC_DIR += $(BASE_DIR)/src/core/include # for boot_modules.h only

@@ -19,6 +19,7 @@
 #include <base/synced_allocator.h>
 #include <base/allocator_avl.h>
 #include <irq_session/irq_session.h>
+#include <util/xml_generator.h>
 
 /* base-hw includes */
 #include <hw/boot_info.h>
@@ -33,6 +34,7 @@
 #include <core_mem_alloc.h>
 #include <translation_table.h>
 #include <assertion.h>
+#include <board.h>
 
 namespace Genode {
 	class Address_space;
@@ -49,7 +51,7 @@ class Genode::Platform : public Genode::Platform_generic
 		Phys_allocator     _irq_alloc;          /* IRQ allocator          */
 		Rom_fs             _rom_fs         { }; /* ROM file system        */
 
-		static Hw::Boot_info           const &_boot_info();
+		static Hw::Boot_info<Board::Boot_info> const &_boot_info();
 		static Hw::Memory_region_array const & _core_virt_regions();
 
 		/**
@@ -67,10 +69,15 @@ class Genode::Platform : public Genode::Platform_generic
 		 */
 		void _init_io_mem_alloc();
 
+		/**
+		 * Initialize platform_info ROM module
+		 */
+		void _init_platform_info();
+
 		 /**
-		  * Perform additional platform-specific initialization.
+		  * Add additional platform-specific information.
 		  */
-		void _init_additional();
+		void _init_additional_platform_info(Genode::Xml_generator &);
 
 		void _init_rom_modules();
 
@@ -86,16 +93,6 @@ class Genode::Platform : public Genode::Platform_generic
 		 * Return platform IRQ-number for user IRQ-number 'user_irq'
 		 */
 		static long irq(long const user_irq);
-
-		/**
-		 * Setup mode of an IRQ to specified trigger mode and polarity
-		 *
-		 * \param irq_number  ID of targeted interrupt
-		 * \param trigger     new interrupt trigger mode
-		 * \param polarity    new interrupt polarity setting
-		 */
-		static void setup_irq_mode(unsigned irq_number, unsigned trigger,
-		                           unsigned polarity);
 
 		/**
 		 * Get MSI-related parameters from device PCI config space

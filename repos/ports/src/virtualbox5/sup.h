@@ -26,7 +26,7 @@
 #include "MachineImpl.h"
 HRESULT genode_setup_machine(ComObjPtr<Machine> machine);
 
-HRESULT genode_check_memory_config(ComObjPtr<Machine> machine);
+HRESULT genode_check_memory_config(ComObjPtr<Machine> machine, size_t);
 
 /**
  * Returns true if a vCPU could be started. If false we run without
@@ -37,11 +37,11 @@ bool create_emt_vcpu(pthread_t * pthread, size_t stack,
                      Genode::Cpu_session * cpu_session,
                      Genode::Affinity::Location location,
                      unsigned int cpu_id,
-                     const char * name);
+                     const char * name, long prio);
 
 
 uint64_t genode_cpu_hz();
-void genode_update_tsc(void (*update_func)(void), unsigned long update_us);
+void genode_update_tsc(void (*update_func)(void), Genode::uint64_t update_us);
 
 Genode::Cpu_session * get_vcpu_cpu_session();
 

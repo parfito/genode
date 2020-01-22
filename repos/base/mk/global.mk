@@ -23,9 +23,10 @@ CUSTOM_OBJCOPY  ?= $(CROSS_DEV_PREFIX)objcopy
 CUSTOM_RANLIB   ?= $(CROSS_DEV_PREFIX)ranlib
 CUSTOM_STRIP    ?= $(CROSS_DEV_PREFIX)strip
 CUSTOM_GNATBIND ?= $(CROSS_DEV_PREFIX)gnatbind
-CUSTOM_HOST_CC  ?= gcc
+CUSTOM_HOST_CC  ?= $(HOST_DEV_PREFIX)gcc
+CUSTOM_HOST_CXX ?= $(HOST_DEV_PREFIX)g++
 CUSTOM_ADA_CC   ?= $(CUSTOM_CC)
-CUSTOM_ALI2DEP  ?= echo "        WARNING: ali2dep not used, get it from https://github.com/Componolit/ali2dep and make CUSTOM_ALI2DEP point to the binary." \#
+CUSTOM_ALI2DEP  ?= $(CROSS_DEV_PREFIX)ali2dep
 
 #
 # GNU utilities
@@ -135,6 +136,11 @@ CC_OLEVEL ?= -O2
 CC_WARN   ?= -Wall
 
 #
+# XXX fix the warnings and remove this option
+#
+CC_WARN += -Wno-error=implicit-fallthrough
+
+#
 # Additional warnings for C++
 #
 CC_CXX_WARN_STRICT ?= -Wextra -Weffc++ -Werror -Wsuggest-override
@@ -184,7 +190,7 @@ CC_RUSTC_OPT += $(foreach lib,$(LIBS),-L$(LIB_CACHE_DIR)/$(lib))
 # We substitute '.' characters by '_' to allow a source-file-specific
 # C++ standard option for files with more than one dot in their name.
 #
-CC_CXX_OPT_STD ?= -std=gnu++11
+CC_CXX_OPT_STD ?= -std=gnu++17
 CC_CXX_OPT += $(lastword $(CC_CXX_OPT_STD) $(CC_CXX_OPT_STD_$(subst .,_,$*)))
 
 #

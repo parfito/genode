@@ -12,6 +12,7 @@
  */
 
 #include <base/log.h>
+#include <libc/component.h>
 #include <util/xml_node.h>
 
 #include <VBox/settings.h>
@@ -108,7 +109,7 @@ void GenodeConsole::update_video_mode()
 	if (!fb)
 		return;
 
-	if ((fb->w() == 0) && (fb->h() == 0)) {
+	if ((fb->w() <= 1) && (fb->h() <= 1)) {
 		/* interpret a size of 0x0 as indication to quit VirtualBox */
 		if (PowerButton() != S_OK)
 			Genode::error("ACPI shutdown failed");
@@ -123,7 +124,7 @@ void GenodeConsole::update_video_mode()
 	                    32);
 }
 
-void GenodeConsole::handle_input()
+void GenodeConsole::_handle_input()
 {
 	/* disable input processing if vm is powered down */
 	if (vm_down && (_vbox_mouse || _vbox_keyboard)) {
@@ -273,7 +274,7 @@ void GenodeConsole::handle_input()
 		                                RTTimeMilliTS());
 }
 
-void GenodeConsole::handle_mode_change()
+void GenodeConsole::_handle_mode_change()
 {
 	IFramebuffer *pFramebuffer = NULL;
 	HRESULT rc = i_getDisplay()->QueryFramebuffer(0, &pFramebuffer);
@@ -281,7 +282,7 @@ void GenodeConsole::handle_mode_change()
 
 	Genodefb *fb = dynamic_cast<Genodefb *>(pFramebuffer);
 
-	fb->update_mode();
+	fb->update_mode(_nitpicker.mode());
 	update_video_mode();
 }
 
@@ -312,7 +313,7 @@ void GenodeConsole::init_clipboard()
 	}
 }
 
-void GenodeConsole::handle_cb_rom_change()
+void GenodeConsole::_handle_cb_rom_change()
 {
 	if (!_clipboard_rom)
 		return;
@@ -330,10 +331,9 @@ void GenodeConsole::init_backends(IKeyboard * gKeyboard, IMouse * gMouse)
 	HRESULT rc = i_getDisplay()->QueryFramebuffer(0, &pFramebuffer);
 	Assert(SUCCEEDED(rc) && pFramebuffer);
 
-	Genodefb *fb = dynamic_cast<Genodefb *>(pFramebuffer);
-	fb->mode_sigh(_mode_change_signal_dispatcher);
+	_nitpicker.mode_sigh(_mode_change_signal_dispatcher);
 
-	handle_mode_change();
+	_handle_mode_change();
 }
 
 void GenodeConsole::i_onMouseCapabilityChange(BOOL supportsAbsolute,
@@ -519,7 +519,7 @@ void fireKeyboardLedsChangedEvent(IEventSource *, bool num_lock,
 	guest_caps_lock = caps_lock;
 }
 
-void GenodeConsole::handle_sticky_keys()
+void GenodeConsole::_handle_sticky_keys()
 {
 	/* no keyboard - no sticky key handling */
 	if (!_vbox_keyboard || !_caps_lock.constructed())
@@ -554,3 +554,15 @@ void GenodeConsole::handle_sticky_keys()
 		_vbox_keyboard->PutScancode(Input::KEY_CAPSLOCK | 0x80);
 	}
 }
+
+void GenodeConsole::handle_input() {
+	Libc::with_libc([&] () { _handle_input(); }); }
+
+void GenodeConsole::handle_sticky_keys() {
+	Libc::with_libc([&] () { _handle_sticky_keys(); }); }
+
+void GenodeConsole::handle_mode_change() {
+	Libc::with_libc([&] () { _handle_mode_change(); }); }
+
+void GenodeConsole::handle_cb_rom_change() {
+	Libc::with_libc([&] () { _handle_cb_rom_change(); }); }

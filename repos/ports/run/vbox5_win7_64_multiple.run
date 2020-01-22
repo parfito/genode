@@ -12,7 +12,8 @@
 # ...
 # lCPU 6-7: VM6 2 vCPUs
 
-assert_spec 64bit
+assert_spec x86_64
+assert_spec nova
 
 set flavor   "win7_64"
 set flavor_extension "_multiple"
@@ -32,5 +33,8 @@ set use_ps2 [have_spec ps2]
 set use_vms 6
 set affinity_space_width 8
 set use_cpu_load 0
+
+# use non-generic vbox5 VMM version
+set use_vbox5_nova 1
 
 source ${genode_dir}/repos/ports/run/vbox_win.inc

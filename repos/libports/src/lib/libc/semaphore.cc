@@ -12,11 +12,19 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+/* Genode includes */
 #include <base/log.h>
 #include <base/semaphore.h>
 #include <semaphore.h>
 
-using namespace Genode;
+/* libc includes */
+#include <libc/allocator.h>
+
+/* libc-internal includes */
+#include <internal/types.h>
+
+using namespace Libc;
+
 
 extern "C" {
 
@@ -24,7 +32,7 @@ extern "C" {
 	 * This class is named 'struct sem' because the 'sem_t' type is
 	 * defined as 'struct sem*' in 'semaphore.h'
 	 */
-	struct sem : Semaphore
+	struct sem : Genode::Semaphore
 	{
 		sem(int value) : Semaphore(value) { }
 	};
@@ -39,7 +47,8 @@ extern "C" {
 
 	int sem_destroy(sem_t *sem)
 	{
-		delete *sem;
+		Libc::Allocator alloc { };
+		destroy(alloc, *sem);
 		return 0;
 	}
 
@@ -53,7 +62,8 @@ extern "C" {
 
 	int sem_init(sem_t *sem, int pshared, unsigned int value)
 	{
-		*sem = new struct sem(value);
+		Libc::Allocator alloc { };
+		*sem = new (alloc) struct sem(value);
 		return 0;
 	}
 

@@ -31,6 +31,7 @@ namespace Kernel
 	class Vm;
 	class User_irq;
 	using Native_utcb = Genode::Native_utcb;
+	template <typename T> class Core_object_identity;
 
 	/**
 	 * Kernel names of the kernel calls
@@ -42,7 +43,7 @@ namespace Kernel
 	constexpr Call_arg call_id_resume_thread()          { return 104; }
 	constexpr Call_arg call_id_thread_pager()           { return 105; }
 	constexpr Call_arg call_id_thread_quota()           { return 106; }
-	constexpr Call_arg call_id_update_pd()              { return 107; }
+	constexpr Call_arg call_id_invalidate_tlb()         { return 107; }
 	constexpr Call_arg call_id_new_pd()                 { return 108; }
 	constexpr Call_arg call_id_delete_pd()              { return 109; }
 	constexpr Call_arg call_id_new_signal_receiver()    { return 110; }
@@ -62,18 +63,13 @@ namespace Kernel
 	constexpr Call_arg call_id_new_core_thread()        { return 124; }
 
 	/**
-	 * Update locally effective domain configuration to in-memory state
-	 *
-	 * \param pd  pointer to pd kernel object
-	 *
-	 * Kernel and/or hardware may cache parts of a domain configuration. This
-	 * function ensures that the in-memory state of the targeted domain gets
-	 * CPU-locally effective. The calling thread must not be destroyed while
-	 * in this syscall.
+	 * Invalidate TLB entries for the `pd` in region `addr`, `sz`
 	 */
-	inline void update_pd(Pd * const pd)
+	inline void invalidate_tlb(Pd & pd, addr_t const addr,
+	                           size_t const sz)
 	{
-		call(call_id_update_pd(), (Call_arg)pd);
+		call(call_id_invalidate_tlb(), (Call_arg)&pd, (Call_arg)addr,
+		     (Call_arg)sz);
 	}
 
 
@@ -83,9 +79,9 @@ namespace Kernel
 	 * \param thread  kernel object of the targeted thread
 	 * \param quota   new CPU quota value
 	 */
-	inline void thread_quota(Kernel::Thread * const thread, size_t const quota)
+	inline void thread_quota(Kernel::Thread & thread, size_t const quota)
 	{
-		call(call_id_thread_quota(), (Call_arg)thread, (Call_arg)quota);
+		call(call_id_thread_quota(), (Call_arg)&thread, (Call_arg)quota);
 	}
 
 
@@ -108,9 +104,9 @@ namespace Kernel
 	 * continue the execution of a thread no matter what state the thread is
 	 * in.
 	 */
-	inline void pause_thread(Thread * const thread)
+	inline void pause_thread(Thread & thread)
 	{
-		call(call_id_pause_thread(), (Call_arg)thread);
+		call(call_id_pause_thread(), (Call_arg)&thread);
 	}
 
 
@@ -119,9 +115,9 @@ namespace Kernel
 	 *
 	 * \param thread  pointer to thread kernel object
 	 */
-	inline void resume_thread(Thread * const thread)
+	inline void resume_thread(Thread & thread)
 	{
-		call(call_id_resume_thread(), (Call_arg)thread);
+		call(call_id_resume_thread(), (Call_arg)&thread);
 	}
 
 
@@ -136,11 +132,11 @@ namespace Kernel
 	 * \retval   0  suceeded
 	 * \retval !=0  failed
 	 */
-	inline int start_thread(Thread * const thread, unsigned const cpu_id,
-	                        Pd * const pd, Native_utcb * const utcb)
+	inline int start_thread(Thread & thread, unsigned const cpu_id,
+	                        Pd & pd, Native_utcb & utcb)
 	{
-		return call(call_id_start_thread(), (Call_arg)thread, cpu_id,
-		            (Call_arg)pd, (Call_arg)utcb);
+		return call(call_id_start_thread(), (Call_arg)&thread, cpu_id,
+		            (Call_arg)&pd, (Call_arg)&utcb);
 	}
 
 
@@ -159,9 +155,9 @@ namespace Kernel
 	 * limit the time a parent waits for a server when closing a session
 	 * of one of its children.
 	 */
-	inline void cancel_thread_blocking(Thread * const thread)
+	inline void cancel_thread_blocking(Thread & thread)
 	{
-		call(call_id_cancel_thread_blocking(), (Call_arg)thread);
+		call(call_id_cancel_thread_blocking(), (Call_arg)&thread);
 	}
 
 
@@ -171,10 +167,10 @@ namespace Kernel
 	 * \param thread             pointer to thread kernel object
 	 * \param signal_context_id  capability id of the page-fault handler
 	 */
-	inline void thread_pager(Thread * const thread,
-	                         capid_t  const signal_context_id)
+	inline void thread_pager(Thread & thread,
+	                         capid_t const signal_context_id)
 	{
-		call(call_id_thread_pager(), (Call_arg)thread, signal_context_id);
+		call(call_id_thread_pager(), (Call_arg)&thread, signal_context_id);
 	}
 
 
@@ -183,9 +179,9 @@ namespace Kernel
 	 *
 	 * \param vm  pointer to vm kernel object
 	 */
-	inline void run_vm(Vm * const vm)
+	inline void run_vm(Vm & vm)
 	{
-		call(call_id_run_vm(), (Call_arg) vm);
+		call(call_id_run_vm(), (Call_arg) &vm);
 	}
 
 
@@ -194,22 +190,9 @@ namespace Kernel
 	 *
 	 * \param vm  pointer to vm kernel object
 	 */
-	inline void pause_vm(Vm * const vm)
+	inline void pause_vm(Vm & vm)
 	{
-		call(call_id_pause_vm(), (Call_arg) vm);
-	}
-
-	/**
-	 * Create an interrupt object
-	 *
-	 * \param p                 memory donation for the irq object
-	 * \param irq_nr            interrupt number
-	 * \param signal_context_id capability id of the signal context
-	 */
-	inline int new_irq(addr_t const p, unsigned irq_nr,
-	                   capid_t signal_context_id)
-	{
-		return call(call_id_new_irq(), (Call_arg) p, irq_nr, signal_context_id);
+		call(call_id_pause_vm(), (Call_arg) &vm);
 	}
 
 	/**
@@ -217,40 +200,9 @@ namespace Kernel
 	 *
 	 * \param irq  pointer to interrupt kernel object
 	 */
-	inline void ack_irq(User_irq * const irq)
+	inline void ack_irq(User_irq & irq)
 	{
-		call(call_id_ack_irq(), (Call_arg) irq);
-	}
-
-	/**
-	 * Destruct an interrupt object
-	 *
-	 * \param irq  pointer to interrupt kernel object
-	 */
-	inline void delete_irq(User_irq * const irq)
-	{
-		call(call_id_delete_irq(), (Call_arg) irq);
-	}
-
-	/**
-	 * Create a new object identity for a thread
-	 *
-	 * \param dst  memory donation for the new object
-	 * \param cap  capability id of the targeted thread
-	 */
-	inline capid_t new_obj(void * const dst, capid_t const cap)
-	{
-		return call(call_id_new_obj(), (Call_arg)dst, (Call_arg)cap);
-	}
-
-	/**
-	 * Destroy an object identity
-	 *
-	 * \param dst pointer to the object identity object
-	 */
-	inline void delete_obj(void * const dst)
-	{
-		call(call_id_delete_obj(), (Call_arg)dst);
+		call(call_id_ack_irq(), (Call_arg) &irq);
 	}
 }
 

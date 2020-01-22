@@ -17,6 +17,7 @@
 #include <base/component.h>
 #include <base/log.h>
 #include <base/heap.h>
+#include <base/sleep.h>
 #include <block/component.h>
 #include <block/driver.h>
 #include <block_session/connection.h>
@@ -86,6 +87,8 @@ struct Usb::Block_driver : Usb::Completion,
 		Genode::log("Device plugged");
 
 		if (!initialize()) {
+			env.parent().exit(-1);
+			Genode::sleep_forever();
 			return;
 		}
 
@@ -131,9 +134,8 @@ struct Usb::Block_driver : Usb::Completion,
 	/*
 	 * Block session
 	 */
-	Block::Session::Operations _block_ops   { };
-	Block::sector_t            _block_count { 0 };
-	size_t                     _block_size  { 0 };
+	Block::sector_t _block_count { 0 };
+	size_t          _block_size  { 0 };
 
 	bool _writeable = false;
 
@@ -167,6 +169,7 @@ struct Usb::Block_driver : Usb::Completion,
 
 		bool no_medium     = false;
 		bool try_again     = false;
+		bool start_stop    = false;
 
 		Usb::Device &device;
 		uint8_t      interface;
@@ -247,22 +250,42 @@ struct Usb::Block_driver : Usb::Completion,
 				uint8_t const asc = r.read<Request_sense_response::Asc>();
 				uint8_t const asq = r.read<Request_sense_response::Asq>();
 
-				enum { MEDIUM_NOT_PRESENT = 0x3a, NOT_READY_TO_READY_CHANGE = 0x28 };
+				bool error = false;
+
+				enum { MEDIUM_NOT_PRESENT         = 0x3a,
+				       NOT_READY_TO_READY_CHANGE  = 0x28,
+				       POWER_ON_OR_RESET_OCCURRED = 0x29,
+				       LOGICAL_UNIT_NOT_READY     = 0x04 };
 				switch (asc) {
+
 				case MEDIUM_NOT_PRESENT:
 					Genode::error("Not ready - medium not present");
 					no_medium = true;
 					break;
-				case NOT_READY_TO_READY_CHANGE: /* asq == 0x00 */
+
+				case NOT_READY_TO_READY_CHANGE:  /* asq == 0x00 */
+				case POWER_ON_OR_RESET_OCCURRED: /* asq == 0x00 */
 					Genode::warning("Not ready - try again");
 					try_again = true;
 					break;
+
+				case LOGICAL_UNIT_NOT_READY:
+
+					if      (asq == 2) start_stop = true; /* initializing command required */
+					else if (asq == 1) try_again  = true; /* initializing in progress */
+					else error = true;
+
+					break;
+
 				default:
+					error = true;
+					break;
+				}
+
+				if (error)
 					Genode::error("Request_sense_response asc: ",
 					              Hex(asc, Hex::PREFIX, Hex::PAD),
 					              " asq: ", Hex(asq, Hex::PREFIX, Hex::PAD));
-					break;
-				}
 				break;
 			}
 			case Csw::LENGTH:
@@ -487,6 +510,14 @@ struct Usb::Block_driver : Usb::Completion,
 							/* do nothing for now */
 						} else if (init.try_again) {
 							init.try_again = false;
+						} else if (init.start_stop) {
+
+							init.start_stop = false;
+							Start_stop start_stop((addr_t)cbw_buffer, SS_TAG, active_lun);
+
+							cbw(cbw_buffer, init, true);
+							csw(init, true);
+
 						} else break;
 					} else break;
 
@@ -562,11 +593,9 @@ struct Usb::Block_driver : Usb::Completion,
 		} catch (int) {
 			/* handle command failures */
 			Genode::error("Could not initialize storage device");
-			return false;
 		} catch (...) {
 			/* handle Usb::Session failures */
 			Genode::error("Could not initialize storage device");
-			throw;
 		}
 		return false;
 	}
@@ -723,20 +752,12 @@ struct Usb::Block_driver : Usb::Completion,
 	 */
 	void parse_config(Xml_node node)
 	{
-		_block_ops.set_operation(Block::Packet_descriptor::READ);
-
-		_writeable = node.attribute_value<bool>("writeable", false);
-		if (_writeable)
-			_block_ops.set_operation(Block::Packet_descriptor::WRITE);
-
-		_report_device = node.attribute_value<bool>("report", false);
-
-		active_interface = node.attribute_value<unsigned long>("interface", 0);
-		active_lun       = node.attribute_value<unsigned long>("lun", 0);
-
-		reset_device = node.attribute_value<bool>("reset_device", false);
-
-		verbose_scsi = node.attribute_value<bool>("verbose_scsi", false);
+		_writeable       = node.attribute_value("writeable",    false);
+		_report_device   = node.attribute_value("report",       false);
+		active_interface = node.attribute_value("interface",    0UL);
+		active_lun       = node.attribute_value("lun",          0UL);
+		reset_device     = node.attribute_value("reset_device", false);
+		verbose_scsi     = node.attribute_value("verbose_scsi", false);
 	}
 
 	/**
@@ -813,9 +834,13 @@ struct Usb::Block_driver : Usb::Completion,
 	 **  Block::Driver interface  **
 	 *******************************/
 
-	size_t              block_size() override { return _block_size;  }
-	Block::sector_t    block_count() override { return _block_count; }
-	Block::Session::Operations ops() override { return _block_ops;   }
+	Block::Session::Info info() const override
+	{
+		return { .block_size  = _block_size,
+		         .block_count = _block_count,
+		         .align_log2  = Genode::log2(_block_size),
+		         .writeable   = _writeable };
+	}
 
 	void read(Block::sector_t lba, size_t count,
 	          char *buffer, Block::Packet_descriptor &p) override {

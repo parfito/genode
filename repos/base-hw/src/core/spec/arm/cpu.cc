@@ -26,8 +26,8 @@ Arm_cpu::Context::Context(bool privileged)
 
 	Psr::access_t v = 0;
 	Psr::M::set(v, privileged ? Psr::M::SYS : Psr::M::USR);
-	if (Genode::Pic::fast_interrupts()) Psr::I::set(v, 1);
-	else                                Psr::F::set(v, 1);
+	if (Board::Pic::fast_interrupts()) Psr::I::set(v, 1);
+	else                               Psr::F::set(v, 1);
 	Psr::A::set(v, 1);
 	cpsr = v;
 	cpu_exception = RESET;
@@ -41,7 +41,7 @@ static Asid_allocator &alloc() {
 
 
 Arm_cpu::Mmu_context::Mmu_context(addr_t table)
-: cidr((uint8_t)alloc().alloc()), ttbr0(Ttbr0::init(table)) { }
+: cidr((uint8_t)alloc().alloc()), ttbr0(Ttbr::init(table)) { }
 
 
 Genode::Arm_cpu::Mmu_context::~Mmu_context()

@@ -15,10 +15,13 @@
 #ifndef _LIBC_PLUGIN__FD_ALLOC_H_
 #define _LIBC_PLUGIN__FD_ALLOC_H_
 
-#include <base/allocator_avl.h>
 #include <base/lock.h>
 #include <base/log.h>
 #include <os/path.h>
+#include <base/allocator.h>
+#include <base/id_space.h>
+#include <util/bit_allocator.h>
+#include <util/xml_generator.h>
 
 /* libc includes */
 #include <stdlib.h>
@@ -39,45 +42,50 @@ namespace Libc {
 
 	struct File_descriptor
 	{
-		int             libc_fd = -1;
-		char     const *fd_path = 0;  /* for 'fchdir', 'fstat' */
-		Plugin         *plugin  = 0;
-		Plugin_context *context = 0;
-		int             flags   = 0;  /* for 'fcntl' */
-		bool            cloexec = 0;  /* for 'fcntl' */
-		Genode::Lock    lock;
+		Genode::Lock lock { };
 
-		void path(char const *newpath)
-		{
-			if (fd_path) { Genode::warning("may leak former FD path memory"); }
-			if (newpath) {
-				Genode::size_t const path_size = ::strlen(newpath) + 1;
-				char *buf = (char*)malloc(path_size);
-				if (!buf) {
-					Genode::error("could not allocate path buffer for libc_fd ",
-					              libc_fd, libc_fd == ANY_FD ? " (any)" : "");
-					return;
-				}
-				::memcpy(buf, newpath, path_size);
-				fd_path = buf;
-			} else
-				fd_path = 0;
-		}
+		typedef Genode::Id_space<File_descriptor> Id_space;
+		Id_space::Element _elem;
+
+		int const libc_fd = _elem.id().value;
+
+		char const *fd_path = nullptr;  /* for 'fchdir', 'fstat' */
+
+		Plugin         *plugin;
+		Plugin_context *context;
+
+		int  flags    = 0;  /* for 'fcntl' */
+		bool cloexec  = 0;  /* for 'fcntl' */
+		bool modified = false;
+
+		File_descriptor(Id_space &id_space, Plugin &plugin, Plugin_context &context,
+		                Id_space::Id id)
+		: _elem(*this, id_space, id), plugin(&plugin), context(&context) { }
+
+		void path(char const *newpath);
 	};
 
 
-	class File_descriptor_allocator : Allocator_avl_tpl<File_descriptor>
+	class File_descriptor_allocator
 	{
 		private:
 
 			Genode::Lock _lock;
+
+			Genode::Allocator &_alloc;
+
+			typedef File_descriptor::Id_space Id_space;
+
+			Id_space _id_space;
+
+			Genode::Bit_allocator<MAX_NUM_FDS> _id_allocator;
 
 		public:
 
 			/**
 			 * Constructor
 			 */
-			File_descriptor_allocator(Genode::Allocator &md_alloc);
+			File_descriptor_allocator(Genode::Allocator &_alloc);
 
 			/**
 			 * Allocate file descriptor
@@ -89,7 +97,28 @@ namespace Libc {
 			 */
 			void free(File_descriptor *fdo);
 
+			/**
+			 * Prevent the use of the specified file descriptor
+			 */
+			void preserve(int libc_fd);
+
 			File_descriptor *find_by_libc_fd(int libc_fd);
+
+			/**
+			 * Return any file descriptor with close-on-execve flag set
+			 *
+			 * \return pointer to file descriptor, or
+			 *         nullptr is no such file descriptor exists
+			 */
+			File_descriptor *any_cloexec_libc_fd();
+
+			/**
+			 * Return file-descriptor ID of any open file, or -1 if no file is
+			 * open
+			 */
+			int any_open_fd();
+
+			void generate_info(Genode::Xml_generator &);
 	};
 
 

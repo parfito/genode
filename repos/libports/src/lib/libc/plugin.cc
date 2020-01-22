@@ -19,8 +19,30 @@
 #include <libc-plugin/plugin_registry.h>
 #include <libc-plugin/plugin.h>
 
-using namespace Genode;
+/* local includes */
+#include <internal/init.h>
+#include <internal/resume.h>
+
 using namespace Libc;
+
+
+static Resume *_resume_ptr;
+
+
+void Libc::init_plugin(Resume &resume)
+{
+	_resume_ptr = &resume;
+}
+
+
+void Plugin::resume_all()
+{
+	struct Missing_call_of_init_plugin : Exception { };
+	if (!_resume_ptr)
+		throw Missing_call_of_init_plugin();
+
+	_resume_ptr->resume_all();
+}
 
 
 Plugin::Plugin(int priority)
@@ -48,13 +70,6 @@ bool Plugin::supports_access(char const *path, int amode)
 }
 
 
-bool Plugin::supports_execve(char const *filename, char *const argv[],
-                             char *const envp[])
-{
-	return false;
-}
-
-
 bool Plugin::supports_mkdir(const char *, mode_t)
 {
 	return false;
@@ -68,6 +83,12 @@ bool Plugin::supports_open(const char *, int)
 
 
 bool Plugin::supports_pipe()
+{
+	return false;
+}
+
+
+bool Plugin::supports_poll()
 {
 	return false;
 }
@@ -134,7 +155,6 @@ bool Plugin::supports_mmap()
 #define DUMMY(ret_type, ret_val, name, args) \
 ret_type Plugin::name args \
 { \
-	Genode::error(__func__, ": " #name " not implemented"); \
 	return ret_val; \
 }
 
@@ -182,13 +202,13 @@ DUMMY(ssize_t, -1, write,         (File_descriptor *, const void *, ::size_t));
  * Misc
  */
 DUMMY(int, -1, access,       (char const *, int));
-DUMMY(int, -1, execve,       (char const *, char *const[], char *const[]));
 DUMMY(int, -1, mkdir,        (const char*, mode_t));
 DUMMY(void *, (void *)(-1), mmap, (void *addr, ::size_t length, int prot, int flags,
                                    File_descriptor *, ::off_t offset));
 DUMMY(int, -1, munmap,       (void *, ::size_t));
 DUMMY(int, -1, msync,        (void *addr, ::size_t len, int flags));
 DUMMY(int, -1, pipe,         (File_descriptor*[2]));
+DUMMY(bool, 0, poll,         (File_descriptor &, struct pollfd &));
 DUMMY(ssize_t, -1, readlink, (const char *, char *, ::size_t));
 DUMMY(int, -1, rename,       (const char *, const char *));
 DUMMY(int, -1, rmdir,        (const char*));

@@ -15,19 +15,11 @@
 #ifndef _CORE__SPEC__IMX53_QSB__BOARD_H_
 #define _CORE__SPEC__IMX53_QSB__BOARD_H_
 
-#include <drivers/defs/imx53_qsb.h>
-#include <drivers/uart/imx.h>
+#include <hw/spec/arm/imx_tzic.h>
+#include <hw/spec/arm/imx53_qsb_board.h>
+#include <spec/arm/imx_epit.h>
+#include <spec/arm/trustzone_board.h>
 
-namespace Board {
-	using namespace Imx53_qsb;
-	using Serial = Genode::Imx_uart;
-
-	enum {
-		UART_BASE  = UART_1_MMIO_BASE,
-		UART_CLOCK = 0, /* ignored value */
-	};
-
-	static constexpr bool SMP = false;
-}
+namespace Board { using namespace Hw::Imx53_qsb_board; }
 
 #endif /* _CORE__SPEC__IMX53_QSB__BOARD_H_ */

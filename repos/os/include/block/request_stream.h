@@ -26,6 +26,9 @@ class Block::Request_stream : Genode::Noncopyable
 {
 	public:
 
+		struct Block_size { Genode::size_t value; };
+		struct Align_log2 { Genode::size_t value; };
+
 		/**
 		 * Interface for accessing the content of a 'Request'
 		 *
@@ -39,9 +42,9 @@ class Block::Request_stream : Genode::Noncopyable
 
 				friend class Request_stream;
 
-				Genode::addr_t   const _base;
-				Genode::size_t   const _size;
-				Genode::uint32_t const _block_size;
+				Genode::addr_t       const _base;
+				Genode::size_t       const _size;
+				Block::Session::Info const _info;
 
 				/**
 				 * Return pointer to the first byte of the request content
@@ -56,10 +59,10 @@ class Block::Request_stream : Genode::Noncopyable
 				 */
 				Genode::size_t _request_size(Block::Request const &request) const
 				{
-					return request.count * _block_size;
+					return request.operation.count * _info.block_size;
 				}
 
-				bool _valid_range(Block::Request const &request) const
+				bool _valid_range_and_alignment(Block::Request const &request) const
 				{
 					/* local address of the last byte of the request */
 					Genode::addr_t const request_end = _base + request.offset
@@ -73,13 +76,17 @@ class Block::Request_stream : Genode::Noncopyable
 					if (request_end > _base + _size - 1)
 						return false;
 
+					/* check for proper alignment */
+					if (!Genode::aligned(request.offset, _info.align_log2))
+						return false;
+
 					return true;
 				}
 
 				Payload(Genode::addr_t base, Genode::size_t size,
-				        Genode::uint32_t block_size)
+				        Block::Session::Info info)
 				:
-					_base(base), _size(size), _block_size(block_size)
+					_base(base), _size(size), _info(info)
 				{ }
 
 			public:
@@ -94,12 +101,14 @@ class Block::Request_stream : Genode::Noncopyable
 				template <typename FN>
 				void with_content(Block::Request request, FN const &fn) const
 				{
-					if (_valid_range(request))
+					if (_valid_range_and_alignment(request))
 						fn(_request_ptr(request), _request_size(request));
 				}
 		};
 
 	private:
+
+		Block::Session::Info const _info;
 
 		Packet_stream_tx::Rpc_object<Block::Session::Tx> _tx;
 
@@ -113,10 +122,11 @@ class Block::Request_stream : Genode::Noncopyable
 		               Genode::Dataspace_capability      ds,
 		               Genode::Entrypoint               &ep,
 		               Genode::Signal_context_capability sigh,
-		               Genode::uint32_t                  block_size)
+		               Block::Session::Info        const info)
 		:
+			_info(info),
 			_tx(ds, rm, ep.rpc_ep()),
-			_payload(_tx.sink()->ds_local_base(), _tx.sink()->ds_size(), block_size)
+			_payload(_tx.sink()->ds_local_base(), _tx.sink()->ds_size(), info)
 		{
 			_tx.sigh_ready_to_ack(sigh);
 			_tx.sigh_packet_avail(sigh);
@@ -129,6 +139,8 @@ class Block::Request_stream : Genode::Noncopyable
 		}
 
 		Genode::Capability<Block::Session::Tx> tx_cap() { return _tx.cap(); }
+
+		Block::Session::Info info() const { return _info; }
 
 		/**
 		 * Call functor 'fn' with 'Payload' interface as argument
@@ -178,25 +190,17 @@ class Block::Request_stream : Genode::Noncopyable
 
 				Packet_descriptor const packet = tx_sink.peek_packet();
 
-				auto operation = [] (Packet_descriptor::Opcode op)
-				{
-					switch (op) {
-					case Packet_descriptor::READ:  return Request::Operation::READ;
-					case Packet_descriptor::WRITE: return Request::Operation::WRITE;
-					case Packet_descriptor::END:   return Request::Operation::INVALID;
-					};
-					return Request::Operation::INVALID;
-				};
+				bool const packet_valid = tx_sink.packet_valid(packet)
+				                       && (packet.offset() >= 0);
 
-				bool const packet_valid = (tx_sink.packet_valid(packet)
-				                       && (packet.offset() >= 0)
-				                       && (packet.size() <= (size_t)((uint32_t)~0UL)));
+				Operation operation { .type         = packet.operation_type(),
+				                      .block_number = packet.block_number(),
+				                      .count        = packet.block_count() };
 
-				Request request { .operation    = operation(packet.operation()),
-				                  .success      = Request::Success::FALSE,
-				                  .block_number = (uint64_t)packet.block_number(),
-				                  .offset       = (uint64_t)packet.offset(),
-				                  .count        = (uint32_t)packet.block_count() };
+				Request request { .operation = operation,
+				                  .success   = false,
+				                  .offset    = packet.offset(),
+				                  .tag       = packet.tag() };
 
 				Response const response = packet_valid
 				                        ? fn(request)
@@ -247,9 +251,9 @@ class Block::Request_stream : Genode::Noncopyable
 
 				bool _submitted = false;
 
-				Genode::uint32_t const _block_size;
+				Genode::size_t const _block_size;
 
-				Ack(Tx_sink &tx_sink, Genode::uint32_t block_size)
+				Ack(Tx_sink &tx_sink, Genode::size_t block_size)
 				: _tx_sink(tx_sink), _block_size(block_size) { }
 
 			public:
@@ -262,24 +266,13 @@ class Block::Request_stream : Genode::Noncopyable
 					}
 
 					typedef Block::Packet_descriptor Packet_descriptor;
-					Packet_descriptor packet { (Genode::off_t)request.offset,
-					                           request.count * _block_size };
+					Packet_descriptor::Payload
+						payload { .offset = request.offset,
+						          .bytes  = request.operation.count * _block_size };
 
-					auto opcode = [] (Request::Operation operation)
-					{
-						switch (operation) {
-						case Request::Operation::READ:    return Packet_descriptor::READ;
-						case Request::Operation::WRITE:   return Packet_descriptor::WRITE;
-						case Request::Operation::SYNC:    return Packet_descriptor::END;
-						case Request::Operation::INVALID: return Packet_descriptor::END;
-						};
-						return Packet_descriptor::END;
-					};
+					Packet_descriptor packet(request.operation, payload, request.tag);
 
-					packet = Packet_descriptor(packet, opcode(request.operation),
-					                           request.block_number, request.count);
-
-					packet.succeeded(request.success == Request::Success::TRUE);
+					packet.succeeded(request.success);
 
 					_tx_sink.try_ack_packet(packet);
 					_submitted = true;
@@ -301,7 +294,7 @@ class Block::Request_stream : Genode::Noncopyable
 
 			while (tx_sink.ack_slots_free()) {
 
-				Ack ack(tx_sink, _payload._block_size);
+				Ack ack(tx_sink, _payload._info.block_size);
 
 				fn(ack);
 
@@ -310,8 +303,7 @@ class Block::Request_stream : Genode::Noncopyable
 			}
 		}
 
-		void wakeup_client() { _tx.sink()->wakeup(); }
+		void wakeup_client_if_needed() { _tx.sink()->wakeup(); }
 };
-
 
 #endif /* _INCLUDE__BLOCK__REQUEST_STREAM_H_ */

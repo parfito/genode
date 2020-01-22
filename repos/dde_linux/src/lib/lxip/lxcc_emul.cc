@@ -20,8 +20,8 @@
 #include <base/snprintf.h>
 #include <dataspace/client.h>
 #include <region_map/client.h>
-#include <timer_session/connection.h>
 #include <trace/timestamp.h>
+#include <timer_session/connection.h>
 
 /* local includes */
 #include <lx_emul.h>
@@ -37,12 +37,25 @@
 
 #include <lx_kit/backend_alloc.h>
 
+struct Memory_object_base;
+
 static Lx_kit::Env *lx_env;
+
+static Genode::Object_pool<Memory_object_base> *memory_pool_ptr;
+
 
 void Lx::lxcc_emul_init(Lx_kit::Env &env)
 {
+	static Genode::Object_pool<Memory_object_base> memory_pool;
+
+	memory_pool_ptr = &memory_pool;
+
 	lx_env = &env;
+
+	LX_MUTEX_INIT(dst_gc_mutex);
+	LX_MUTEX_INIT(proto_list_mutex);
 }
+
 
 struct Memory_object_base : Genode::Object_pool<Memory_object_base>::Entry
 {
@@ -59,9 +72,6 @@ struct Memory_object_base : Genode::Object_pool<Memory_object_base>::Entry
 };
 
 
-static Genode::Object_pool<Memory_object_base> memory_pool;
-
-
 Genode::Ram_dataspace_capability
 Lx::backend_alloc(Genode::addr_t size, Genode::Cache_attribute cached)
 {
@@ -70,7 +80,7 @@ Lx::backend_alloc(Genode::addr_t size, Genode::Cache_attribute cached)
 	Genode::Ram_dataspace_capability cap = lx_env->ram().alloc(size);
 	Memory_object_base *o = new (lx_env->heap()) Memory_object_base(cap);
 
-	memory_pool.insert(o);
+	memory_pool_ptr->insert(o);
 	return cap;
 }
 
@@ -80,11 +90,11 @@ void Lx::backend_free(Genode::Ram_dataspace_capability cap)
 	using namespace Genode;
 
 	Memory_object_base *object;
-	memory_pool.apply(cap, [&] (Memory_object_base *o) {
+	memory_pool_ptr->apply(cap, [&] (Memory_object_base *o) {
 		if (!o) return;
 
 		o->free();
-		memory_pool.remove(o);
+		memory_pool_ptr->remove(o);
 
 		object = o; /* save for destroy */
 	});
@@ -301,89 +311,6 @@ void *memmove(void *d, const void *s, size_t n)
 }
 
 
-/*******************
- ** linux/sched.h **
- *******************/
-
-struct Timeout : Genode::Io_signal_handler<Timeout>
-{
-	Genode::Entrypoint &ep;
-	Timer::Connection timer;
-	void (*tick)();
-
-	void handle()
-	{
-		update_jiffies();
-
-		/* tick the higher layer of the component */
-		tick();
-	}
-
-	Timeout(Genode::Env &env, Genode::Entrypoint &ep, void (*ticker)())
-	:
-		Io_signal_handler<Timeout>(ep, *this, &Timeout::handle),
-		ep(ep), timer(env), tick(ticker)
-	{
-		timer.sigh(*this);
-	}
-
-	void schedule(signed long msec)
-	{
-		timer.trigger_once(msec * 1000);
-	}
-
-	void wait()
-	{
-		ep.wait_and_dispatch_one_io_signal();
-	}
-};
-
-
-static Timeout *_timeout;
-static Genode::Signal_context_capability tick_sig_cap;
-
-void Lx::event_init(Genode::Env &env, Genode::Entrypoint &ep, void (*ticker)())
-{
-	static ::Timeout handler(env, ep, ticker);
-	_timeout = &handler;
-}
-
-signed long schedule_timeout(signed long timeout)
-{
-	long start = jiffies;
-	_timeout->schedule(timeout);
-	_timeout->wait();
-	timeout -= jiffies - start;
-	return timeout < 0 ? 0 : timeout;
-}
-
-
-long schedule_timeout_uninterruptible(signed long timeout)
-{
-	return schedule_timeout(timeout);
-}
-
-void poll_wait(struct file * filp, wait_queue_head_t * wait_address, poll_table *p)
-{
-	_timeout->wait();
-}
-
-bool poll_does_not_wait(const poll_table *p)
-{
-	return p == nullptr;
-}
-
-
-/******************
- ** linux/time.h **
- ******************/
-
-unsigned long get_seconds(void)
-{
-	return jiffies / HZ;
-}
-
-
 /*****************
  ** linux/gfp.h **
  *****************/
@@ -442,7 +369,11 @@ class Avl_page : public Genode::Avl_node<Avl_page>
 };
 
 
-static Genode::Avl_tree<Avl_page> tree;
+static Genode::Avl_tree<Avl_page> & tree()
+{
+	static Genode::Avl_tree<Avl_page> _tree;
+	return _tree;
+}
 
 
 struct page *alloc_pages(gfp_t gfp_mask, unsigned int order)
@@ -450,7 +381,7 @@ struct page *alloc_pages(gfp_t gfp_mask, unsigned int order)
 	Avl_page *p;
 	try {
 		p = (Avl_page *)new (lx_env->heap()) Avl_page(PAGE_SIZE << order);
-		tree.insert(p);
+		tree().insert(p);
 	} catch (...) { return 0; }
 
 	return p->page();
@@ -469,9 +400,9 @@ void *__alloc_page_frag(struct page_frag_cache *nc,
 
 void __free_page_frag(void *addr)
 {
-	Avl_page *p = tree.first()->find_by_address((Genode::addr_t)addr);
+	Avl_page *p = tree().first()->find_by_address((Genode::addr_t)addr);
 
-	tree.remove(p);
+	tree().remove(p);
 	destroy(lx_env->heap(), p);
 }
 
@@ -482,7 +413,7 @@ void __free_page_frag(void *addr)
 
 struct page *virt_to_head_page(const void *x)
 {
-	Avl_page *p = tree.first()->find_by_address((Genode::addr_t)x);
+	Avl_page *p = tree().first()->find_by_address((Genode::addr_t)x);
 	lx_log(DEBUG_SLAB, "virt_to_head_page: %p page %p\n", x,p ? p->page() : 0);
 	
 	return p ? p->page() : 0;
@@ -495,9 +426,9 @@ void put_page(struct page *page)
 		return;
 
 	lx_log(DEBUG_SLAB, "put_page: %p", page);
-	Avl_page *p = tree.first()->find_by_address((Genode::addr_t)page->addr);
+	Avl_page *p = tree().first()->find_by_address((Genode::addr_t)page->addr);
 
-	tree.remove(p);
+	tree().remove(p);
 	destroy(lx_env->heap(), p);
 }
 
@@ -710,50 +641,4 @@ bool mod_delayed_work(struct workqueue_struct *wq, struct delayed_work *dwork,
 int schedule_delayed_work(struct delayed_work *dwork, unsigned long delay)
 {
 	return mod_delayed_work(0, dwork, delay);
-}
-
-
-/*******************
- ** linux/timer.h **
- *******************/
-
-static unsigned long round_jiffies(unsigned long j, bool force_up)
-{
-	unsigned remainder = j % HZ;
-
-	/*
-	 * from timer.c
-	 *
-	 * If the target jiffie is just after a whole second (which can happen
-	 * due to delays of the timer irq, long irq off times etc etc) then
-	 * we should round down to the whole second, not up. Use 1/4th second
-	 * as cutoff for this rounding as an extreme upper bound for this.
-	 * But never round down if @force_up is set.
-	 */
-
-	/* per default round down */
-	j = j - remainder;
-
-	/* round up if remainder more than 1/4 second (or if we're forced to) */
-	if (remainder >= HZ/4 || force_up)
-		j += HZ;
-
-	return j;
-}
-
-unsigned long round_jiffies(unsigned long j)
-{
-	return round_jiffies(j, false);
-}
-
-
-unsigned long round_jiffies_up(unsigned long j)
-{
-	return round_jiffies(j, true);
-}
-
-
-unsigned long round_jiffies_relative(unsigned long j)
-{
-	return round_jiffies(j + jiffies, false) - jiffies;
 }

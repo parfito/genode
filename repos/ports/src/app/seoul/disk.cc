@@ -24,9 +24,6 @@
 #include <block_session/connection.h>
 #include <base/heap.h>
 
-/* VMM utility includes */
-#include <vmm/utcb_guard.h>
-
 /* local includes */
 #include "disk.h"
 
@@ -63,7 +60,7 @@ Seoul::Disk::Disk(Genode::Env &env, Synced_motherboard &mb,
 
 	/* initialize struct with 0 size */
 	for (int i=0; i < MAX_DISKS; i++) {
-		_diskcon[i].blk_size = 0;
+		_diskcon[i].info.block_size = 0;
 	}
 }
 
@@ -109,9 +106,10 @@ void Seoul::Disk::handle_disk(unsigned disknr)
 		} else {
 
 			if (packet.operation() == Block::Packet_descriptor::Opcode::READ) {
-						
+
 				unsigned long long sector = msg->sector;
-				sector = (sector-packet.block_number()) * _diskcon[disknr].blk_size;
+				sector = (sector-packet.block_number())
+				       * _diskcon[disknr].info.block_size;
 
 				bool const ok = check_dma_descriptors(msg,
 					[&](char * const dma_addr, unsigned i)
@@ -155,15 +153,12 @@ void Seoul::Disk::handle_disk(unsigned disknr)
 
 bool Seoul::Disk::receive(MessageDisk &msg)
 {
-	static Vmm::Utcb_guard::Utcb_backup utcb_backup;
-	Vmm::Utcb_guard guard(utcb_backup);
-
 	if (msg.disknr >= MAX_DISKS)
 		Logging::panic("You configured more disks than supported.\n");
 
 	struct disk_session &disk = _diskcon[msg.disknr];
 
-	if (!disk.blk_size) {
+	if (!disk.info.block_size) {
 		Genode::String<16> label("VirtualDisk ", msg.disknr);
 		/*
 		 * If we receive a message for this disk the first time, create the
@@ -174,9 +169,9 @@ bool Seoul::Disk::receive(MessageDisk &msg)
 				new (disk_heap()) Genode::Allocator_avl(disk_heap());
 
 			disk.blk_con =
-				new (disk_heap()) Block::Connection(_env, block_alloc,
-				                                    4*512*1024,
-				                                    label.string());
+				new (disk_heap()) Block::Connection<>(_env, block_alloc,
+				                                      4*512*1024,
+				                                      label.string());
 			disk.signal =
 				new (disk_heap()) Seoul::Disk_signal(_env.ep(), *this,
 				                                     *disk.blk_con, msg.disknr);
@@ -185,7 +180,7 @@ bool Seoul::Disk::receive(MessageDisk &msg)
 			return false;
 		}
 
-		disk.blk_con->info(&disk.blk_cnt, &disk.blk_size, &disk.ops);
+		disk.info = disk.blk_con->info();
 	}
 
 	msg.error = MessageDisk::DISK_OK;
@@ -195,22 +190,25 @@ bool Seoul::Disk::receive(MessageDisk &msg)
 	{
 		Genode::String<16> label("VirtualDisk ", msg.disknr);
 
-		msg.params->flags = DiskParameter::FLAG_HARDDISK;
-		msg.params->sectors = disk.blk_cnt;
-		msg.params->sectorsize = disk.blk_size;
-		msg.params->maxrequestcount = disk.blk_cnt;
+		msg.params->flags           = DiskParameter::FLAG_HARDDISK;
+		msg.params->sectors         = disk.info.block_count;
+		msg.params->sectorsize      = disk.info.block_size;
+		msg.params->maxrequestcount = disk.info.block_count;
 		memcpy(msg.params->name, label.string(), label.length());
 
 		return true;
 	}
 	case MessageDisk::DISK_WRITE:
 		/* don't write on read only medium */
-		if (!disk.ops.supported(Block::Packet_descriptor::WRITE)) {
+		if (!disk.info.writeable) {
 			MessageDiskCommit ro(msg.disknr, msg.usertag,
 		                     MessageDisk::DISK_STATUS_DEVICE);
 			_motherboard()->bus_diskcommit.send(ro);
 			return true;
 		}
+
+		[[fallthrough]];
+
 	case MessageDisk::DISK_READ:
 		/* read and write handling */
 		return execute(msg.type == MessageDisk::DISK_WRITE, disk, msg);
@@ -248,10 +246,10 @@ bool Seoul::Disk::restart(struct disk_session const &disk,
 {
 	Block::Session::Tx::Source * const source = disk.blk_con->tx();
 
-	unsigned long const  total = DmaDescriptor::sum_length(msg->dmacount, msg->dma);
-	unsigned const blk_size    = disk.blk_size;
-	unsigned long const blocks = total/blk_size + ((total%blk_size) ? 1 : 0);
-	bool          const write  = msg->type == MessageDisk::DISK_WRITE;
+	unsigned long const total    = DmaDescriptor::sum_length(msg->dmacount, msg->dma);
+	unsigned long const blk_size = disk.info.block_size;
+	unsigned long const blocks   = total/blk_size + ((total%blk_size) ? 1 : 0);
+	bool          const write    = msg->type == MessageDisk::DISK_WRITE;
 
 	Block::Packet_descriptor packet;
 
@@ -259,7 +257,7 @@ bool Seoul::Disk::restart(struct disk_session const &disk,
 		Genode::Lock::Guard lock_guard(_alloc_lock);
 
 		packet = Block::Packet_descriptor(
-			source->alloc_packet(blocks * blk_size),
+			disk.blk_con->alloc_packet(blocks * blk_size),
 			(write) ? Block::Packet_descriptor::WRITE
 			        : Block::Packet_descriptor::READ,
 			msg->sector, blocks);
@@ -301,8 +299,8 @@ bool Seoul::Disk::execute(bool const write, struct disk_session const &disk,
                           MessageDisk const &msg)
 {
 	unsigned long long const sector  = msg.sector;
-	unsigned long const  total   = DmaDescriptor::sum_length(msg.dmacount, msg.dma);
-	unsigned long const blk_size = disk.blk_size;
+	unsigned long const total    = DmaDescriptor::sum_length(msg.dmacount, msg.dma);
+	unsigned long const blk_size = disk.info.block_size;
 	unsigned long const blocks   = total/blk_size + ((total%blk_size) ? 1 : 0);
 
 	Block::Session::Tx::Source * const source = disk.blk_con->tx();
@@ -316,7 +314,7 @@ bool Seoul::Disk::execute(bool const write, struct disk_session const &disk,
 		Genode::Lock::Guard lock_guard(_alloc_lock);
 
 		packet = Block::Packet_descriptor(
-			source->alloc_packet(blocks * blk_size),
+			disk.blk_con->alloc_packet(blocks * blk_size),
 			(write) ? Block::Packet_descriptor::WRITE
 			        : Block::Packet_descriptor::READ,
 			sector, blocks);

@@ -29,7 +29,7 @@
 #include "vmm.h"
 
 /* libc memory allocator */
-#include <libc_mem_alloc.h>
+#include <internal/mem_alloc.h>
 
 /* VirtualBox includes */
 #include <iprt/mem.h>
@@ -295,4 +295,11 @@ extern "C" long pathconf(char const *path, int name)
 	Genode::error("pathconf does not support config option ", name);
 	errno = EINVAL;
 	return -1;
+}
+
+extern "C" int siginterrupt(int, int)
+{
+	Genode::Thread * thread = Genode::Thread::myself();
+	Genode::warning(__func__, " called, caller=", thread ? thread->name() : "");
+	return 0;
 }

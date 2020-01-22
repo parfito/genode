@@ -19,6 +19,7 @@
 #include <elf.h>
 #include <file.h>
 #include <util.h>
+#include <config.h>
 
 /*
  * Mark functions that are used during the linkers self-relocation phase as
@@ -45,6 +46,23 @@ namespace Linker {
 	 * The value corresponds to the config attribute "ld_verbose".
 	 */
 	extern bool verbose;
+
+	/**
+	 * Stage of execution
+	 *
+	 * This state variable is used to control the implicit execution of global
+	 * static constructors as a side effect of loading a shared library.
+	 *
+	 * At STAGE_BINARY, the binary is initialized and 'Component::construct'
+	 * is executed. At this early stage, no global static constructor must be
+	 * executed.
+	 *
+	 * Once, 'Env::exec_static_constructors' is called, or
+	 * 'Component::construct' returned, we enter the 'STAGE_SO'. At this stage,
+	 * global static constructors can safely be executed, i.e., as side effect
+	 * of loading a shared library.
+	 */
+	extern Stage stage;
 
 	/**
 	 * Find symbol via index
@@ -165,6 +183,8 @@ class Linker::Object : private Fifo<Object>::Element,
 
 		virtual void relocate(Bind) = 0;
 
+		virtual bool keep() const = 0;
+
 		virtual void load() = 0;
 		virtual bool unload() { return false;}
 
@@ -218,18 +238,24 @@ class Linker::Dependency : public Fifo<Dependency>::Element, Noncopyable
 		Object      &_obj;
 		Root_object *_root     = nullptr;
 		Allocator   *_md_alloc = nullptr;
+		bool   const _unload_on_destruct = true;
 
 		/**
 		 * Check if file is in this dependency tree
 		 */
 		bool in_dep(char const *file, Fifo<Dependency> const &);
 
+		void _load(Env &, Allocator &, char const *, Fifo<Dependency> &, Keep);
+
 	public:
 
 		/*
 		 * Called by 'Ld' constructor
 		 */
-		Dependency(Object &obj, Root_object *root) : _obj(obj), _root(root) { }
+		Dependency(Object &obj, Root_object *root)
+		:
+			_obj(obj), _root(root), _unload_on_destruct(false)
+		{ }
 
 		Dependency(Env &, Allocator &, char const *path, Root_object *,
 		           Fifo<Dependency> &, Keep);
@@ -240,6 +266,11 @@ class Linker::Dependency : public Fifo<Dependency>::Element, Noncopyable
 		 * Load dependent ELF object
 		 */
 		void load_needed(Env &, Allocator &, Fifo<Dependency> &, Keep);
+
+		/**
+		 * Preload ELF object
+		 */
+		void preload(Env &, Allocator &, Fifo<Dependency> &, Config const &);
 
 		bool root() const { return _root != nullptr; }
 
@@ -274,7 +305,8 @@ class Linker::Root_object
 		~Root_object()
 		{
 			_deps.dequeue_all([&] (Dependency &d) {
-				destroy(_md_alloc, &d); });
+				if (!d.obj().keep())
+					destroy(_md_alloc, &d); });
 		}
 
 		Link_map const &link_map() const
@@ -294,6 +326,8 @@ class Linker::Root_object
 		}
 
 		void enqueue(Dependency &dep) { _deps.enqueue(dep); }
+
+		void remove_dependency(Dependency &dep) { _deps.remove(dep); }
 
 		Fifo<Dependency> &deps() { return _deps; }
 };

@@ -35,11 +35,11 @@ namespace Fiasco {
 using namespace Genode;
 using namespace Fiasco;
 
-unsigned long long Platform_thread::execution_time() const
+Trace::Execution_time Platform_thread::execution_time() const
 {
 	Fiasco::l4_kernel_clock_t us = 0;
 	l4_thread_stats_time(_thread.local.data()->kcap(), &us);
-	return (unsigned long long)us;
+	return { us, 0, 10000 /* quantum readable ?*/, _prio };
 }
 
 
@@ -355,4 +355,44 @@ Platform_thread::~Platform_thread()
 	 */
 	if (_platform_pd)
 		_platform_pd->unbind_thread(*this);
+}
+
+Fiasco::l4_cap_idx_t Platform_thread::setup_vcpu(unsigned const vcpu_id,
+                                                 Cap_mapping const &task_vcpu,
+                                                 Cap_mapping &vcpu_irq)
+{
+	if (!_platform_pd)
+		return Fiasco::L4_INVALID_CAP;
+	if (vcpu_id >= (Platform::VCPU_VIRT_EXT_END - Platform::VCPU_VIRT_EXT_START) / L4_PAGESIZE)
+		return Fiasco::L4_INVALID_CAP;
+
+	Genode::addr_t const vcpu_addr = Platform::VCPU_VIRT_EXT_START +
+	                                 L4_PAGESIZE * vcpu_id;
+	l4_fpage_t vm_page = l4_fpage( vcpu_addr, L4_PAGESHIFT, L4_FPAGE_RW);
+
+	l4_msgtag_t msg = l4_task_add_ku_mem(_platform_pd->native_task().data()->kcap(), vm_page);
+	if (l4_error(msg)) {
+		Genode::error("ku_mem failed ", l4_error(msg));
+		return Fiasco::L4_INVALID_CAP;
+	}
+
+	msg = l4_thread_vcpu_control_ext(_thread.local.data()->kcap(), vcpu_addr);
+	if (l4_error(msg)) {
+		Genode::error("vcpu_control_exit failed ", l4_error(msg));
+		return Fiasco::L4_INVALID_CAP;
+	}
+
+	/* attach thread to irq */
+	vcpu_irq.remote = _gate.remote + TASK_VCPU_IRQ_CAP;
+	l4_msgtag_t tag = l4_rcv_ep_bind_thread(vcpu_irq.local.data()->kcap(),
+	                                        _thread.local.data()->kcap(), 0);
+	if (l4_msgtag_has_error(tag))
+		warning("attaching thread's irq failed");
+
+	vcpu_irq.map(_platform_pd->native_task().data()->kcap());
+
+	/* set human readable name in kernel debugger */
+	Cap_mapping map(task_vcpu.local, _gate.remote + TASK_VCPU_CAP);
+	map.map(_platform_pd->native_task().data()->kcap());
+	return map.remote;
 }

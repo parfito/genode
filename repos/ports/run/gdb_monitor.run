@@ -55,7 +55,7 @@ set config {
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Timer"/> </provides>
 	</start>
-	<start name="uart_drv">
+	<start name="pc_uart_drv">
 		<resource name="RAM" quantum="2M"/>
 		<provides>
 			<service name="Terminal"/>
@@ -75,7 +75,7 @@ set config {
 				</config>
 			</target>
 			<preserve name="RAM" quantum="4M"/>
-			<vfs> <dir name="dev"> <log/> </dir> </vfs>
+			<vfs> <dir name="dev"> <log/> <terminal/> </dir> </vfs>
 			<libc stdout="/dev/log" stderr="/dev/log"/>
 		</config>
 	</start>
@@ -96,8 +96,8 @@ proc binary_name_gdbserver_platform_lib_so { } {
 # generic modules
 set boot_modules {
 	core init timer
-	ld.lib.so libc.lib.so vfs.lib.so libm.lib.so libc_pipe.lib.so libc_terminal.lib.so
-	uart_drv posix.lib.so
+	ld.lib.so libc.lib.so vfs.lib.so libm.lib.so libc_pipe.lib.so
+	pc_uart_drv posix.lib.so stdcxx.lib.so
 	gdb_monitor gdbserver_platform.lib.so test-gdb_monitor
 }
 
@@ -138,8 +138,8 @@ set gdb_cmds ""
 append gdb_cmds {-ex "target remote localhost:$local_port" }
 append gdb_cmds [gdb_initial_breakpoint_cmds $gdb_target_binary]
 
-# run GDB and redirect stderr to stdio to get the relevant output into the expect buffer
-eval spawn [gdb] debug/ld.lib.so -n $gdb_cmds 2&>1
+# run GDB
+eval spawn [gdb] debug/ld.lib.so -n $gdb_cmds
 set gdb_id [list $spawn_id $genode_id]
 
 puts ""
@@ -244,8 +244,8 @@ if {![regexp {Breakpoint 4, test_thread_start} $output]} {
 send "info threads\n"
 run_genode_until {\(gdb\)} 20 $gdb_id
 
-if {![regexp {  4    Thread 3} $output] ||
-    ![regexp {\* 3    Thread 4          test_thread_start} $output] ||
+if {![regexp {\* 4    Thread 4          test_thread_start} $output] ||
+    ![regexp {  3    Thread 3} $output] ||
     ![regexp {  2    Thread 2} $output] ||
     ![regexp {  1    Thread 1} $output]} {
 	puts stderr "*** Error: Thread info is not as expected"
@@ -274,7 +274,7 @@ puts ""
 send "c\n"
 run_genode_until {\(gdb\)} 20 $gdb_id
 
-if {![regexp {Program received signal SIGSEGV, Segmentation fault.} $output]} {
+if {![regexp {Thread 4 received signal SIGSEGV, Segmentation fault.} $output]} {
 	puts stderr "*** Error: Segmentation fault exception was not caught"
 	exit -1
 }
@@ -292,10 +292,10 @@ if {![have_spec arm]} {
 	send "bt\n"
 	run_genode_until {\(gdb\)} 20 $gdb_id
 
-	if {![regexp {Genode::Cancelable_lock::lock\(\)} $output] ||
-		![regexp {Genode::Signal_receiver::block_for_signal\(\)} $output] ||
-		![regexp {Genode::Entrypoint::_wait_and_dispatch_one_io_signal\(bool\)} $output] ||
-		![regexp {Libc::Kernel::run\(Libc::Application_code&\)} $output] } {
+	if {![regexp {Genode::Cancelable_lock::lock} $output] ||
+		![regexp {Genode::Signal_receiver::block_for_signal} $output] ||
+		![regexp {Genode::Entrypoint::_wait_and_dispatch_one_io_signal} $output] ||
+		![regexp {Libc::Kernel::run} $output] } {
 
 		puts stderr "*** Error: Stack trace when in syscall is not as expected"
 		exit -1

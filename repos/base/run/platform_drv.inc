@@ -38,35 +38,10 @@ proc usb_host_drv_binary { } {
 	if {[have_spec panda]}     { return panda_usb_host_drv     }
 	if {[have_spec rpi]}       { return rpi_usb_host_drv       }
 	if {[have_spec imx6q_sabrelite]} { return imx6q_sabrelite_usb_host_drv }
+	if {[have_spec imx8q_evk]} { return imx8q_evk_usb_host_drv }
 	if {[have_spec odroid_x2]} { return odroid_x2_usb_host_drv }
 	if {[have_spec x86]}       { return x86_pc_usb_host_drv    }
 	return no_usb_drv_available
-}
-
-
-##
-# Return name of the NIC driver binary
-#
-proc nic_drv_binary { } {
-	if {[have_spec linux]} { return linux_nic_drv }
-	if {[have_spec omap4] || [have_spec arndale] || [have_spec rpi]} { return usb_drv }
-	if {[have_spec zynq]} { return zynq_nic_drv }
-	if {!([have_spec riscv] || [have_spec odroid_xu])} { return nic_drv }
-	return no_nic_drv_available
-}
-
-
-##
-# Return configuration for NIC driver
-#
-proc nic_drv_config { } {
-	if {[have_spec imx53]} {
-		return "<config><card type=\"fsl,imx25-fec\" mii=\"rmii\" irq=\"87\" mmio=\"0x63fec000\"/></config>" }
-	if {[have_spec imx6q_sabrelite]} {
-		return "<config><card type=\"fsl,imx6q-fec\" mii=\"rgmii\" irq=\"150\" mmio=\"0x2188000\"/></config>" }
-	if {[have_spec omap4] || [have_spec arndale] || [have_spec rpi]} {
-		return {<config uhci="yes" ohci="yes" ehci="yes"><nic mac="02:00:00:00:01:01"/></config>} }
-	return ""
 }
 
 
@@ -85,6 +60,18 @@ proc acpi_drv_name { } {
 		return acpica }
 
 	return acpi_drv
+}
+
+##
+# Return name of the gpio driver
+#
+proc gpio_drv { } {
+	if {[have_spec rpi]}     { return rpi_gpio_drv     }
+	if {[have_spec omap4]}   { return omap4_gpio_drv   }
+	if {[have_spec imx53]}   { return imx53_gpio_drv   }
+	if {[have_spec imx6]}    { return imx6_gpio_drv    }
+	if {[have_spec exynos4]} { return exynos4_gpio_drv }
+	return no_gpio_drv_available
 }
 
 proc platform_drv_build_components {} {
@@ -108,9 +95,18 @@ proc append_platform_drv_build_components {} {
 	append build_components { } [platform_drv_build_components]
 }
 
+proc platform_drv_binary {} {
+	if {[have_spec arndale]  } { return arndale_platform_drv   }
+	if {[have_spec imx53]    } { return imx53_platform_drv     }
+	if {[have_spec odroid_x2]} { return odroid_x2_platform_drv }
+	if {[have_spec rpi]      } { return rpi_platform_drv       }
+	if {[have_spec x86]      } { return platform_drv           }
+	return no_platform_drv_available
+}
+
 proc platform_drv_boot_modules {} {
 	set drv_boot_modules ""
-	lappend_if [have_platform_drv] drv_boot_modules platform_drv
+	lappend_if [have_platform_drv] drv_boot_modules [platform_drv_binary]
 	lappend_if [have_spec x86]     drv_boot_modules report_rom
 
 	if {[have_spec x86]} {
@@ -180,13 +176,7 @@ proc platform_drv_config_config {} {
 		<config acpi_ready="yes">}
 	}
 
-	if {[have_spec acpi] || [have_spec arm] || [have_spec muen]} {
-		return {
-		<config>}
-	}
-
-	return {
-		<config acpi="no">}
+	return {<config>}
 }
 
 
@@ -196,7 +186,7 @@ proc platform_drv_config {} {
 	if {[have_spec x86] && ![have_spec muen] && ![have_spec linux]} {
 
 		append drv_config {
-	<start name="acpi_drv" } [platform_drv_priority] { caps="400" >
+	<start name="acpi_drv" } [platform_drv_priority] { caps="350" >
 		<binary name="} [acpi_drv_name] {"/>}
 
 		if {[acpi_drv_name] eq "acpica"} {
@@ -205,7 +195,7 @@ proc platform_drv_config {} {
 		<config acpi_ready="yes" act_as_acpi_drv="yes" report="yes"/>}
 		} else {
 			append drv_config {
-		<resource name="RAM" quantum="3M"/>}
+		<resource name="RAM" quantum="4M"/>}
 		}
 
 		append drv_config {
@@ -241,7 +231,8 @@ proc platform_drv_config {} {
 			<service name="Report" />
 		</provides>
 		<config>
-			<policy label="platform_drv -> acpi" report="acpi_drv -> acpi"/>}
+			<policy label="smbios_decoder -> smbios_table" report="acpi_drv -> smbios_table"/>
+			<policy label="platform_drv -> acpi"           report="acpi_drv -> acpi"/>}
 
 		append_if [expr {[acpi_drv_name] eq "acpica"}] drv_config {
 			<policy label="platform_drv -> acpi_ready" report="acpi_drv -> acpi_ready"/>}
@@ -262,6 +253,7 @@ proc platform_drv_config {} {
 
 		append drv_config {
 	<start name="platform_drv" } [platform_drv_priority] { caps="800">
+		<binary name="} [platform_drv_binary] {"/>
 		<resource name="RAM" quantum="4M" constrain_phys="yes"/>
 		<provides>
 			<service name="Platform"/>}

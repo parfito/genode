@@ -32,6 +32,7 @@ namespace Genode {
 	void init_exception_handling(Env &);
 	void init_signal_transmitter(Env &);
 	void init_cxx_heap(Env &);
+	void init_cxx_guard();
 	void init_ldso_phdr(Env &);
 	void init_signal_thread(Env &);
 	void init_root_proxy(Env &);
@@ -47,6 +48,7 @@ namespace Genode {
 
 	void cxx_demangle(char const*, char*, size_t);
 	void cxx_current_exception(char *out, size_t size);
+	void cxx_free_tls(void *thread);
 
 	Id_space<Parent::Client> &env_session_id_space();
 	Env &internal_env();

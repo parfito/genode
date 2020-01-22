@@ -15,20 +15,12 @@
 #ifndef _CORE__SPEC__RPI__BOARD_H_
 #define _CORE__SPEC__RPI__BOARD_H_
 
-#include <drivers/defs/rpi.h>
-#include <drivers/uart/pl011.h>
+#include <hw/spec/arm/rpi_board.h>
+#include <spec/arm/bcm2835_pic.h>
+#include <spec/arm/bcm2835_system_timer.h>
 
 namespace Board {
-	using namespace Rpi;
-
-	using Serial   = Genode::Pl011_uart;
-
-	enum {
-		UART_BASE  = Rpi::PL011_0_MMIO_BASE,
-		UART_CLOCK = Rpi::PL011_0_CLOCK,
-	};
-
-	static constexpr bool SMP = false;
+	using namespace Hw::Rpi_board;
 };
 
 #endif /* _CORE__SPEC__RPI__BOARD_H_ */

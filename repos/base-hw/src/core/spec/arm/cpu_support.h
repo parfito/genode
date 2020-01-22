@@ -37,27 +37,6 @@ namespace Genode {
 
 struct Genode::Arm_cpu : public Hw::Arm_cpu
 {
-	/**
-	 * Translation table base register 0
-	 */
-	struct Ttbr0 : Hw::Arm_cpu::Ttbr0
-	{
-		/**
-		 * Return initialized value
-		 *
-		 * \param table  base of targeted translation table
-		 */
-		static access_t init(addr_t const table)
-		{
-			access_t v = Ttbr::Ba::masked((addr_t)table);
-			Ttbr::Rgn::set(v, Ttbr::CACHEABLE);
-			Ttbr::S::set(v, Board::SMP ? 1 : 0);
-			if (Board::SMP) Ttbr::Irgn::set(v, Ttbr::CACHEABLE);
-			else Ttbr::C::set(v, 1);
-			return v;
-		}
-	};
-
 	struct Fpu_context
 	{
 		uint32_t fpscr { 1UL << 24 }; /* VFP/SIMD - status/control register     */
@@ -84,20 +63,10 @@ struct Genode::Arm_cpu : public Hw::Arm_cpu
 	};
 
 	/**
-	 * Returns true if current execution context is running in user mode
-	 */
-	static bool is_user() { return Psr::M::get(Cpsr::read()) == Psr::M::USR; }
-
-	/**
 	 * Invalidate all entries of all instruction caches
 	 */
 	static void invalidate_instr_cache() {
 		asm volatile ("mcr p15, 0, %0, c7, c5, 0" :: "r" (0) : ); }
-
-	/**
-	 * Flush all entries of all data caches
-	 */
-	static void clean_invalidate_data_cache();
 
 	/**
 	 * Invalidate all branch predictions
@@ -112,8 +81,8 @@ struct Genode::Arm_cpu : public Hw::Arm_cpu
 	 * Clean and invalidate data-cache for virtual region
 	 * 'base' - 'base + size'
 	 */
-	void clean_invalidate_data_cache_by_virt_region(addr_t base,
-	                                                size_t const size)
+	static void clean_invalidate_data_cache_by_virt_region(addr_t base,
+	                                                       size_t const size)
 	{
 		addr_t const top = base + size;
 		base &= line_align_mask;
@@ -165,11 +134,6 @@ struct Genode::Arm_cpu : public Hw::Arm_cpu
 	 * Return kernel name of the executing CPU
 	 */
 	static unsigned executing_id() { return 0; }
-
-	/**
-	 * Return kernel name of the primary CPU
-	 */
-	static unsigned primary_id() { return 0; }
 };
 
 #endif /* _CORE__SPEC__ARM__CPU_SUPPORT_H_ */

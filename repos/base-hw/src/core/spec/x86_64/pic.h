@@ -21,7 +21,7 @@
 /* core includes */
 #include <board.h>
 
-namespace Genode
+namespace Board
 {
 	/*
 	 * Redirection table entry
@@ -41,18 +41,16 @@ namespace Genode
 	enum { IRQ_COUNT = 256 };
 }
 
-struct Genode::Irte : Register<64>
+struct Board::Irte : Genode::Register<64>
 {
 	struct Pol  : Bitfield<13, 1> { };
 	struct Trg  : Bitfield<15, 1> { };
 	struct Mask : Bitfield<16, 1> { };
 };
 
-class Genode::Ioapic : public Mmio
+class Board::Ioapic : public Genode::Mmio
 {
 	private:
-
-		enum { REMAP_BASE = Board::VECTOR_REMAP_BASE };
 
 		/* Number of Redirection Table entries */
 		unsigned _irte_count = 0;
@@ -121,8 +119,8 @@ class Genode::Ioapic : public Mmio
 		 * \param trigger     new interrupt trigger mode
 		 * \param polarity    new interrupt polarity setting
 		 */
-		void setup_irq_mode(unsigned irq_number, unsigned trigger,
-		                    unsigned polarity);
+		void irq_mode(unsigned irq_number, unsigned trigger,
+		              unsigned polarity);
 
 		/*
 		 * Registers
@@ -135,7 +133,7 @@ class Genode::Ioapic : public Mmio
 		};
 };
 
-class Genode::Pic : public Mmio
+class Board::Pic : public Genode::Mmio
 {
 	private:
 
@@ -180,7 +178,7 @@ class Genode::Pic : public Mmio
 		/**
 		 * Mapping of our logical boot CPUs to the local APIC IDs
 		 */
-		static uint8_t lapic_ids[NR_OF_CPUS];
+		static Genode::uint8_t lapic_ids[NR_OF_CPUS];
 
 	public:
 
@@ -209,6 +207,8 @@ class Genode::Pic : public Mmio
 
 		void mask(unsigned const i);
 
+		void irq_mode(unsigned irq, unsigned trigger, unsigned polarity);
+
 		void store_apic_id(unsigned const cpu_id) {
 			Id::access_t const lapic_id = read<Id>();
 			lapic_ids[cpu_id] = (lapic_id >> 24) & 0xff;
@@ -216,7 +216,5 @@ class Genode::Pic : public Mmio
 
 		void send_ipi(unsigned const);
 };
-
-namespace Kernel { using Genode::Pic; }
 
 #endif /* _CORE__SPEC__X86_64__PIC_H_ */

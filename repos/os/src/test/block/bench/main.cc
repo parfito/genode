@@ -35,11 +35,11 @@ class Throughput
 
 		typedef Genode::size_t size_t;
 
-		Env &             _env;
-		Heap              _heap    { _env.ram(), _env.rm() };
-		Allocator_avl     _alloc   { &_heap };
-		Block::Connection _session { _env, &_alloc, TX_BUFFER };
-		Timer::Connection _timer   { _env };
+		Env &               _env;
+		Heap                _heap    { _env.ram(), _env.rm() };
+		Allocator_avl       _alloc   { &_heap };
+		Block::Connection<> _session { _env, &_alloc, TX_BUFFER };
+		Timer::Connection   _timer   { _env };
 
 		Signal_handler<Throughput> _disp_ack    { _env.ep(), *this,
 		                                          &Throughput::_ack };
@@ -48,13 +48,14 @@ class Throughput
 		bool                          _read_done  = false;
 		bool                          _write_done = false;
 
-		unsigned long   _start   = 0;
-		unsigned long   _stop    = 0;
+		uint64_t        _start   = 0;
+		uint64_t        _stop    = 0;
 		size_t          _bytes   = 0;
 		Block::sector_t _current = 0;
 
-		size_t          _blk_size  = 0;
-		Block::sector_t _blk_count = 0;
+		Block::Session::Info const _info      { _session.info() };
+		size_t               const _blk_size  { _info.block_size };
+		Block::sector_t      const _blk_count { _info.block_count };
 
 		void _submit()
 		{
@@ -66,7 +67,7 @@ class Throughput
 			try {
 				while (_session.tx()->ready_to_submit()) {
 					Block::Packet_descriptor p(
-						_session.tx()->alloc_packet(REQUEST_SIZE),
+						_session.alloc_packet(REQUEST_SIZE),
 						!_read_done ? Block::Packet_descriptor::READ : Block::Packet_descriptor::WRITE,
 						_current, count);
 
@@ -137,9 +138,6 @@ class Throughput
 		{
 			_session.tx_channel()->sigh_ack_avail(_disp_ack);
 			_session.tx_channel()->sigh_ready_to_submit(_disp_submit);
-
-			Block::Session::Operations blk_ops;
-			_session.info(&_blk_count, &_blk_size, &blk_ops);
 
 			warning("block count ", _blk_count, " size ", _blk_size);
 			log("read/write ", TEST_SIZE / 1024, " KiB ...");

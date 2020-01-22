@@ -14,10 +14,10 @@
 /* Genode includes */
 #include <vfs/dir_file_system.h>
 #include <vfs/readonly_value_file_system.h>
+#include <os/vfs.h>
 
 /* gems includes */
 #include <gems/ttf_font.h>
-#include <gems/vfs.h>
 #include <gems/cached_font.h>
 
 /* local includes */
@@ -31,11 +31,6 @@ namespace Vfs_ttf {
 	class Font_from_file;
 	class Local_factory;
 	class File_system;
-
-	struct Dummy_io_response_handler : Vfs::Io_response_handler
-	{
-		void handle_io_response(Vfs::Vfs_handle::Context *) override { };
-	};
 
 	typedef Text_painter::Font Font;
 }
@@ -137,7 +132,6 @@ struct Vfs_ttf::Local_factory : File_system_factory
 
 
 class Vfs_ttf::File_system : private Local_factory,
-                             private Dummy_io_response_handler,
                              public  Vfs::Dir_file_system
 {
 	private:

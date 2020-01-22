@@ -53,7 +53,7 @@ class Seoul::Disk_signal
 		Genode::Signal_handler<Disk_signal> const sigh;
 
 		Disk_signal(Genode::Entrypoint &ep, Disk &obj,
-		            Block::Connection &block, unsigned disk_nr)
+		            Block::Connection<> &block, unsigned disk_nr)
 		:
 		  _obj(obj), _id(disk_nr),
 		  sigh(ep, *this, &Disk_signal::_signal)
@@ -105,11 +105,9 @@ class Seoul::Disk : public StaticReceiver<Seoul::Disk>
 		/* block session used by disk models of VMM */
 		enum { MAX_DISKS = 4 };
 		struct disk_session {
-			Block::Connection          *blk_con;
-			Block::Session::Operations  ops;
-			Genode::size_t              blk_size;
-			Block::sector_t             blk_cnt;
-			Disk_signal                *signal;
+			Block::Connection<> *blk_con;
+			Block::Session::Info info;
+			Disk_signal         *signal;
 		} _diskcon[MAX_DISKS] { };
 
 		Synced_motherboard &_motherboard;

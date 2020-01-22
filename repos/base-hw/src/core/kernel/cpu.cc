@@ -18,7 +18,7 @@
 #include <kernel/thread.h>
 #include <kernel/irq.h>
 #include <kernel/pd.h>
-#include <pic.h>
+#include <board.h>
 #include <hw/assert.h>
 #include <hw/boot_info.h>
 
@@ -55,7 +55,7 @@ void Cpu_job::_interrupt(unsigned const /* cpu_id */)
 {
 	/* determine handling for specific interrupt */
 	unsigned irq_id;
-	if (pic().take_request(irq_id))
+	if (_cpu->pic().take_request(irq_id))
 
 		/* is the interrupt a cpu-local one */
 		if (!_cpu->interrupt(irq_id)) {
@@ -63,11 +63,11 @@ void Cpu_job::_interrupt(unsigned const /* cpu_id */)
 			/* it needs to be a user interrupt */
 			User_irq * irq = User_irq::object(irq_id);
 			if (irq) irq->occurred();
-			else Genode::warning("Unknown interrupt ", irq_id);
+			else Genode::raw("Unknown interrupt ", irq_id);
 		}
 
 	/* end interrupt request at controller */
-	pic().finish_request();
+	_cpu->pic().finish_request();
 }
 
 
@@ -140,7 +140,8 @@ Cpu_job & Cpu::schedule()
 		_scheduler.update(_timer.time());
 		time_t t = _scheduler.head_quota();
 		_timer.set_timeout(this, t);
-		_timer.schedule_timeout();
+		time_t duration = _timer.schedule_timeout();
+		old_job.update_execution_time(duration);
 	}
 
 	/* return new job */
@@ -157,10 +158,10 @@ addr_t Cpu::stack_start() {
 	return (addr_t)&kernel_stack + KERNEL_STACK_SIZE * (_id+1); }
 
 
-Cpu::Cpu(unsigned const id, Pic & pic,
+Cpu::Cpu(unsigned const id,
          Inter_processor_work_list & global_work_list)
 :
-	_id(id), _pic(pic), _timer(*this),
+	_id(id), _timer(*this),
 	_scheduler(&_idle, _quota(), _fill()), _idle(*this),
 	_ipi_irq(*this),
 	_global_work_list(global_work_list)
@@ -171,10 +172,10 @@ Cpu::Cpu(unsigned const id, Pic & pic,
  ** Cpu_pool **
  **************/
 
-bool Cpu_pool::initialize(Pic & pic)
+bool Cpu_pool::initialize()
 {
 	unsigned id = Cpu::executing_id();
-	_cpus[id].construct(id, pic, _global_work_list);
+	_cpus[id].construct(id, _global_work_list);
 	return --_initialized == 0;
 }
 
@@ -186,5 +187,6 @@ Cpu & Cpu_pool::cpu(unsigned const id)
 }
 
 
+using Boot_info = Hw::Boot_info<Board::Boot_info>;
 Cpu_pool::Cpu_pool()
-: _count(reinterpret_cast<Hw::Boot_info*>(Hw::Mm::boot_info().base)->cpus) { }
+: _count(reinterpret_cast<Boot_info*>(Hw::Mm::boot_info().base)->cpus) { }

@@ -14,7 +14,7 @@
 #ifndef _CORE__SPEC__X86_64__MUEN__PIC_H_
 #define _CORE__SPEC__X86_64__MUEN__PIC_H_
 
-namespace Genode
+namespace Board
 {
 	/**
 	 * Programmable interrupt controller for core
@@ -22,9 +22,11 @@ namespace Genode
 	class Pic;
 }
 
-class Genode::Pic
+class Board::Pic
 {
 	public:
+
+		struct Virtual_context {};
 
 		enum {
 			/*
@@ -62,12 +64,11 @@ class Genode::Pic
 		void mask(unsigned const) { }
 		bool is_ip_interrupt(unsigned, unsigned) { return false; }
 		void store_apic_id(unsigned const) { }
+		void irq_mode(unsigned, unsigned, unsigned) { }
 
 	private:
 
 		bool isr[NR_OF_IRQ] = {false};
 };
-
-namespace Kernel { class Pic : public Genode::Pic { }; }
 
 #endif /* _CORE__SPEC__X86_64__MUEN__PIC_H_ */

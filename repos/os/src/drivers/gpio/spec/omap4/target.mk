@@ -1,5 +1,5 @@
-TARGET   = gpio_drv
-REQUIRES = omap4
+TARGET   = omap4_gpio_drv
+REQUIRES = arm_v7
 SRC_CC   = main.cc
 LIBS     = base
 INC_DIR += $(PRG_DIR)

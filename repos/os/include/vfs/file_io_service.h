@@ -18,24 +18,8 @@
 
 #include <vfs/vfs_handle.h>
 
-namespace Vfs {
-	class Vfs_handle;
-	struct Io_response_handler;
-	struct Watch_response_handler;
-	struct File_io_service;
-}
+namespace Vfs { struct File_io_service; }
 
-
-struct Vfs::Io_response_handler : Interface
-{
-	virtual void handle_io_response(Vfs_handle::Context *context) = 0;
-};
-
-
-struct Vfs::Watch_response_handler : Interface
-{
-	virtual void handle_watch_response(Vfs_watch_handle::Context*) = 0;
-};
 
 struct Vfs::File_io_service : Interface
 {
@@ -188,6 +172,20 @@ struct Vfs::File_io_service : Interface
 	virtual bool queue_sync(Vfs_handle *) { return true; }
 
 	virtual Sync_result complete_sync(Vfs_handle *) { return SYNC_OK; }
+
+	/***********************
+	 ** Modification time **
+	 ***********************/
+
+	/**
+	 * Update the modification time of a file
+	 *
+	 * \return true if update attempt was successful
+	 */
+	virtual bool update_modification_timestamp(Vfs_handle *, Vfs::Timestamp)
+	{
+		return true;
+	}
 };
 
 #endif /* _INCLUDE__VFS__FILE_IO_SERVICE_H_ */

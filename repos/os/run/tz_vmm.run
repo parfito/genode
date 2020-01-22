@@ -99,6 +99,12 @@ set dtb               $inversepath_linux
 
 set targets { core init server/tz_vmm }
 
+proc tz_vmm_binary {} {
+	if {[have_spec usb_armory]} { return usb_armory_tz_vmm }
+	if {[have_spec imx53_qsb]}  { return imx53_qsb_tz_vmm }
+	return no_tz_vmm_binary
+}
+
 if { $mmc_rootfs } {
 
 	# choose interrupt for paravirtualized block
@@ -137,7 +143,7 @@ set config {
 	<default caps="100"/>}
 
 append_if $trusted_led config {
-	<start name="gpio_drv">
+	<start name="imx53_gpio_drv">
 		<resource name="RAM" quantum="3M"/>
 		<provides><service name="Gpio"/></provides>
 		<config/>
@@ -148,14 +154,14 @@ append_if $mmc_rootfs config {
 		<resource name="RAM" quantum="3M"/>
 		<provides><service name="Timer"/></provides>
 	</start>
-	<start name="platform_drv">
+	<start name="imx53_platform_drv">
 		<resource name="RAM" quantum="3M"/>
 		<provides>
 			<service name="Regulator"/>
 			<service name="Platform"/>
 		</provides>
 	</start>
-	<start name="sd_card_drv">
+	<start name="imx53_sd_card_drv">
 		<resource name="RAM" quantum="3M"/>
 		<provides><service name="Block"/></provides>
 	</start>
@@ -163,7 +169,7 @@ append_if $mmc_rootfs config {
 		<resource name="RAM" quantum="10M" />
 		<provides><service name="Block" /></provides>
 		<route>
-			<service name="Block"><child name="sd_card_drv" /></service>
+			<service name="Block"><child name="imx53_sd_card_drv" /></service>
 			<any-service><parent/><any-child/></any-service>
 		</route>
 		<config>
@@ -173,6 +179,7 @@ append_if $mmc_rootfs config {
 
 append config {
 	<start name="tz_vmm">
+		<binary name="} [tz_vmm_binary] {"/>
 		<resource name="RAM" quantum="10M"/> }
 
 if { $mmc_rootfs } {
@@ -209,7 +216,8 @@ if {![file exists linux]} {
 exec >& /dev/null wget -O linux.md5 $linux_uri.md5
 exec md5sum -c linux.md5
 
-set boot_modules { core ld.lib.so init tz_vmm linux }
+set boot_modules { core ld.lib.so init linux }
+lappend boot_modules [tz_vmm_binary]
 
 if { $dtb } {
 
@@ -228,8 +236,8 @@ if { $mmc_rootfs } {
 
 	# add components that enable MMC access via parvirtualized block
 	lappend boot_modules timer
-	lappend boot_modules platform_drv
-	lappend boot_modules sd_card_drv
+	lappend boot_modules imx53_platform_drv
+	lappend boot_modules imx53_sd_card_drv
 	lappend boot_modules part_block
 
 	# download and add rootfs
@@ -258,7 +266,7 @@ if { $mmc_rootfs } {
 }
 cd ..
 
-lappend_if $trusted_led boot_modules gpio_drv
+lappend_if $trusted_led boot_modules imx53_gpio_drv
 
 build_boot_image [join $boot_modules " "]
 

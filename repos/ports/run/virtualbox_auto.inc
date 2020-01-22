@@ -1,4 +1,6 @@
-if {(![have_spec nova] && ![have_spec muen])} {
+assert_spec x86
+
+if {(![have_spec nova] && ![have_spec foc])} {
 	puts "Platform is unsupported."
 	exit 0
 }
@@ -6,16 +8,6 @@ if {(![have_spec nova] && ![have_spec muen])} {
 if {[have_include "power_on/qemu"]} {
 	puts "\nRun script does not support Qemu.\n"
 	exit
-}
-
-if {([have_spec muen] && [expr $use_vbox5])} {
-	puts "Run script does not support vbox5 on Muen."
-	exit 0
-}
-
-if {([have_spec muen] && $flavor != "win7")} {
-	puts "Run script does not support $flavor on Muen."
-	exit 0
 }
 
 if { [get_cmd_switch --autopilot] && [have_spec x86_32] } {
@@ -27,15 +19,25 @@ if {[have_spec nova]} {
 	proc kernel_output { } { return "novga logmem" }
 }
 
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/nitpicker
+
+if {$use_vms > 1} {
+	import_from_depot [depot_user]/pkg/themed_wm
+}
+
 append build_components {
-	core init timer
 	server/part_block
 	server/fs_rom
 	drivers/ahci
 	drivers/framebuffer
 }
 
-lappend_if [expr $use_rumpfs] build_components server/rump_fs
+lappend_if [expr $use_rumpfs] build_components lib/vfs/rump
+lappend_if [expr $use_rumpfs] build_components server/vfs
 lappend_if [expr $use_vbox5]  build_components virtualbox5
 lappend_if [expr $use_ps2]    build_components drivers/input
 lappend_if [expr $use_usb]    build_components drivers/usb
@@ -55,8 +57,6 @@ append_platform_drv_build_components
 
 build $build_components
 
-create_boot_directory
-
 set config {
 <config verbose="yes" prio_levels="4">}
 
@@ -74,9 +74,7 @@ append config {
 		<service name="PD"/>
 		<service name="RM"/>
 		<service name="CPU"/>
-		<service name="LOG"/>}
-
-append_if [have_spec muen] config {
+		<service name="LOG"/>
 		<service name="VM"/>}
 
 append_if [expr $use_cpu_load] config {
@@ -133,9 +131,13 @@ append_if [have_spec nova] config {
 
 append_if [expr $use_rumpfs] config {
 	<start name="rump_fs" priority="-1" caps="200">
+		<binary name="vfs"/>
 		<resource name="RAM" quantum="32M"/>
 		<provides><service name="File_system"/></provides>
-		<config ld_verbose="yes" fs="ext2fs">}
+		<config ld_verbose="yes">
+			<vfs>
+				<rump fs="ext2fs" ram="28M"/>
+			</vfs>}
 
 append_if [expr $use_rumpfs && $use_ram_fs && $use_overlay_from_disk] config {
 			<policy label_prefix="overlay_from_disk" root="/ram" writeable="no"/>}
@@ -247,15 +249,8 @@ append_if [expr $use_usb] config {
 		<provides><service name="File_system"/></provides>
 		<config verbose="yes">
 			<content>
-				<inline name="usb_drv.config">}
-
-append_if [expr $use_usb && ![have_spec muen]] config {
-<config uhci="yes" ohci="yes" ehci="yes" xhci="yes">}
-
-append_if [expr $use_usb && [have_spec muen]] config {
-<config uhci="no" ehci="no" xhci="yes">}
-
-append_if [expr $use_usb] config {
+				<inline name="usb_drv.config">
+<config uhci="yes" ohci="yes" ehci="yes" xhci="yes">
 	<hid/>
 	<raw>
 		<report devices="yes"/>
@@ -341,6 +336,7 @@ append_if [expr $use_usb] config {
 
 append_if [have_spec framebuffer] config {
 	<start name="fb_drv" priority="-1" caps="150">
+		<binary name="vesa_fb_drv"/>
 		<resource name="RAM" quantum="8M"/>
 		<provides><service name="Framebuffer"/></provides>
 		<config buffered="yes"/>
@@ -363,17 +359,17 @@ append config {
 install_config $config
 
 append boot_modules {
-	core init timer
 	part_block ahci_drv fs_rom
-	ld.lib.so libc.lib.so vfs.lib.so libm.lib.so
-	libc_pipe.lib.so libc_terminal.lib.so
+	libc.lib.so vfs.lib.so libm.lib.so
+	libc_pipe.lib.so
 	libiconv.lib.so stdcxx.lib.so
 	qemu-usb.lib.so
 }
 
 lappend_if [expr $use_rumpfs] boot_modules rump.lib.so
 lappend_if [expr $use_rumpfs] boot_modules rump_fs.lib.so
-lappend_if [expr $use_rumpfs] boot_modules rump_fs
+lappend_if [expr $use_rumpfs] boot_modules vfs_rump.lib.so
+lappend_if [expr $use_rumpfs] boot_modules vfs
 lappend_if [expr $use_vbox5] boot_modules $virtualbox5_binary
 lappend_if [expr $use_ram_fs || $use_usb] boot_modules ram_fs
 lappend_if [expr $use_ram_fs && !$use_overlay_from_disk] boot_modules $overlay_image
@@ -386,7 +382,7 @@ lappend_if [have_spec nova] boot_modules log_core
 lappend_if [expr         $use_ps2] boot_modules ps2_drv
 lappend_if [expr         $use_usb] boot_modules usb_drv
 lappend_if [expr         $use_usb] boot_modules usb_report_filter
-lappend_if [have_spec framebuffer] boot_modules fb_drv
+lappend_if [have_spec framebuffer] boot_modules vesa_fb_drv
 lappend_if [have_spec         x86] boot_modules rtc_drv
 
 append_platform_drv_boot_modules

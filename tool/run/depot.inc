@@ -23,6 +23,7 @@ proc depot_spec { } {
 	if {[have_spec x86_64]}  { return "x86_64" }
 	if {[have_spec arm_v6]}  { return "arm_v6" }
 	if {[have_spec arm_v7a]} { return "arm_v7a" }
+	if {[have_spec arm_v8a]} { return "arm_v8a" }
 }
 
 
@@ -165,7 +166,7 @@ proc _current_depot_archive_version { type name } {
 	set repo [repository_contains $hash_rel_path]
 
 	if {$repo == ""} {
-		puts stderr "Error: unable to guess version of '$name' archive"
+		puts stderr "Error: recipe for '$type/$name' not found - unable to guess version"
 		exit 1
 	}
 
@@ -183,9 +184,57 @@ proc _depot_contains_archive { user type name version } {
 }
 
 
+proc _depot_auto_update { archives } {
+
+	set archives_to_create { }
+	foreach archive $archives {
+
+		if {[regexp [_depot_archive_path_pattern] $archive dummy user type name]} {
+
+			if {$type == "pkg"} {
+				lappend archives_to_create "$user/pkg/[depot_spec]/$name" }
+
+			if {$type == "src"} {
+				lappend archives_to_create "$user/bin/[depot_spec]/$name" }
+
+			if {$type == "raw"} {
+				lappend archives_to_create "$user/raw/$name" }
+		}
+	}
+
+	# remove duplicates
+	set archives_to_create [lsort -unique $archives_to_create]
+
+	set    cmd "[genode_dir]/tool/depot/create $archives_to_create "
+	append cmd "CROSS_DEV_PREFIX=[cross_dev_prefix] "
+	append cmd "DEPOT_DIR=[depot_dir] "
+	append cmd "UPDATE_VERSIONS=1 FORCE=1 REBUILD= "
+
+	set make_j_arg ""
+	regexp {.*(-j\d*)} [get_cmd_arg_first --make ""] dummy make_j_arg
+	append cmd "$make_j_arg "
+
+	puts "update depot: $cmd"
+
+	exec {*}$cmd >@ stdout 2>@ stderr
+}
+
+
+# keep track of recursion to perform '_depot_auto_update' only at the top level
+set _collect_from_depot_nesting_level 0
+
+
 proc _collect_from_depot { archives } {
 
 	global _missing_depot_archives
+	global _collect_from_depot_nesting_level
+
+	incr _collect_from_depot_nesting_level
+
+	# fill depot with up-to-date content if --depot-auto-update is enabled
+	if {[get_cmd_switch --depot-auto-update]} {
+		if {$_collect_from_depot_nesting_level == 1} {
+			_depot_auto_update $archives } }
 
 	set all_content {}
 
@@ -234,6 +283,8 @@ proc _collect_from_depot { archives } {
 		}
 		set all_content [concat $all_content $content]
 	}
+
+	incr _collect_from_depot_nesting_level -1
 	return $all_content
 }
 
@@ -408,9 +459,12 @@ proc check_for_missing_depot_archives { } {
 
 proc drivers_interactive_pkg { } {
 
-	if {[have_spec linux]} { return drivers_interactive-linux }
-	if {[have_spec x86]}   { return drivers_interactive-pc }
-	if {[have_spec pbxa9]} { return drivers_interactive-pbxa9 }
+	if {[have_spec muen]}      { return drivers_interactive-muen }
+	if {[have_spec linux]}     { return drivers_interactive-linux }
+	if {[have_spec x86]}       { return drivers_interactive-pc }
+	if {[have_spec pbxa9]}     { return drivers_interactive-pbxa9 }
+	if {[have_spec imx53_qsb]} { return drivers_interactive-imx53_qsb }
+	if {[have_spec rpi]}       { return drivers_interactive-rpi }
 
 	puts stderr "drivers_interactive package undefined for this build configuration"
 	exit 1
@@ -419,7 +473,18 @@ proc drivers_interactive_pkg { } {
 
 proc drivers_nic_pkg { } {
 
-	if {[have_spec x86] && ![have_spec linux]} { return drivers_nic-pc }
+	if {[have_spec x86] && ![have_spec muen] &&
+	    ![have_spec linux]}          { return drivers_nic-pc              }
+	if {[have_spec muen]}            { return drivers_nic-muen            }
+	if {[have_spec linux]}           { return drivers_nic-linux           }
+	if {[have_spec pbxa9]}           { return drivers_nic-pbxa9           }
+	if {[have_spec rpi]}             { return drivers_nic-rpi             }
+	if {[have_spec zynq_qemu]}       { return drivers_nic-zynq            }
+	if {[have_spec imx53_qsb]}       { return drivers_nic-imx53_qsb       }
+	if {[have_spec imx6q_sabrelite]} { return drivers_nic-imx6q_sabrelite }
+	if {[have_spec imx7d_sabre]}     { return drivers_nic-imx7d_sabre     }
+	if {[have_spec imx8q_evk]}       { return drivers_nic-imx8q_evk       }
+
 
 	puts stderr "drivers_nic package undefined for this build configuration"
 	exit 1

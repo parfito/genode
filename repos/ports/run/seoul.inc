@@ -1,27 +1,52 @@
 #
-# \brief  Using Vancouver/Seoul on Genode
+# \brief  Using Seoul on Genode
 # \author Norman Feske
 # \author Markus Partheymueller
 # \author Alexander Boettcher
 # \date   2011-11-21
 
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/nitpicker
 #
 # Build
 #
 
-if {![have_spec nova]} {
-	puts "\nSeoul is solely supported on NOVA.\n"
-	exit 0
+assert_spec x86
+
+set map_small         "no"
+set vmm_vcpu_same_cpu "no"
+
+if {[have_spec sel4]} {
+	set map_small  "yes"
+	set vmm_vcpu_same_cpu  "yes"
+
+	# seL4 has no AMD SVM support
+	if {[have_include "power_on/qemu"]} {
+		puts "\n Run script is not supported on this platform. \n";
+		exit 0
+	}
 }
 
-assert_spec acpi
+if {[have_spec foc]} {
+	# The performance is considerable bad when
+	# vmm and vcpu is not on same physical CPU
+	set vmm_vcpu_same_cpu  "yes"
+
+	# Qemu SVM has no EPT support
+	if {[have_include "power_on/qemu"]} {
+		puts "\n Run script is not supported on this platform. \n";
+		exit 0
+	}
+}
 
 source ${genode_dir}/repos/base/run/platform_drv.inc
 # override defaults of platform_drv.inc
 proc platform_drv_priority {} { return { priority="-1"} }
 
 set build_components {
-	core init timer
 	drivers/rtc
 	drivers/input
 	app/seoul
@@ -35,12 +60,8 @@ lappend_if $use_block_sata      build_components drivers/ahci
 lappend_if $use_nic_session     build_components drivers/nic
 lappend_if $use_nic_bridge      build_components server/nic_bridge
 lappend_if $use_framebuffer     build_components drivers/framebuffer
-lappend_if $use_fancy_stuff     build_components server/nitpicker
-lappend_if $use_fancy_stuff     build_components app/pointer
 lappend_if $use_fancy_stuff     build_components app/status_bar
-lappend_if $use_fancy_stuff     build_components server/liquid_framebuffer
 lappend_if $use_fancy_stuff     build_components app/launchpad
-lappend_if $use_fancy_stuff     build_components server/nitlog
 lappend_if $use_fancy_stuff     build_components server/report_rom
 lappend_if $use_genode_iso      build_components server/iso9660
 lappend_if $use_genode_iso      build_components server/rom_block
@@ -52,8 +73,8 @@ build $build_components
 
 # write Seoul config file
 set vm_cfg_fd [open "bin/vm_seoul.cfg" w]
-puts $vm_cfg_fd {<config colocate="1" >
-	<machine>
+puts $vm_cfg_fd "<config map_small=\"$map_small\" vmm_vcpu_same_cpu=\"$vmm_vcpu_same_cpu\">"
+puts $vm_cfg_fd {	 <machine verbose="no">
 		<mem start="0x0" end="0x9a000"/>
 		<mem start="0x100000" end="0xfffff000"/>
 		<!--<ioio/>-->
@@ -137,8 +158,6 @@ puts $vm_cfg_fd {
 </config>}
 close $vm_cfg_fd
 
-create_boot_directory
-
 #
 # Generate Genode config
 #
@@ -153,6 +172,7 @@ append config {
 		<service name="PD"/>
 		<service name="RM"/>
 		<service name="CPU"/>
+		<service name="VM"/>
 		<service name="LOG"/>}
 
 append_if $use_top config {
@@ -193,7 +213,7 @@ append_if $use_block_sata config {
 
 append_if $use_block_ram config {
 	<start name="ram_block" priority="-1">
-		<resource name="RAM" quantum="162M" />
+		<resource name="RAM" quantum="262M" />
 		<provides><service name="Block"/></provides>
 		<config file="seoul-disc.raw" block_size="512"/>
 	</start>}
@@ -218,6 +238,7 @@ append_platform_drv_config
 
 append_if $use_nic_session config {
 	<start name="nic_drv" priority="-2">
+		<binary name="ipxe_nic_drv"/>
 		<resource name="RAM" quantum="8M"/>
 		<provides><service name="Nic"/></provides>
 	</start>
@@ -235,27 +256,26 @@ append_if [expr $use_nic_session && $use_nic_bridge] config {
 	</start>
 }
 
-if {$use_framebuffer} {
-    append config "
-        <start name=\"$fb_name\" priority=\"-1\" caps=\"$fb_caps\">"
-    append config "
-     		<resource name=\"RAM\" quantum=\"$fb_quantum\"/>"
-    append config {
+append_if $use_framebuffer config {
+	<start name="fb_drv" priority="-1" caps="130">
+		<binary name="vesa_fb_drv"/>
+		<resource name="RAM" quantum="8M"/>
 		<provides><service name="Framebuffer"/></provides>
 		<route>
 			<service name="Timer"><child name="timer"/></service>
 			<service name="Platform"><any-child/></service>
 			<any-service><parent/></any-service>
-		</route>
-		<config width="1024" height="768" depth="16" buffered="yes"/>
-
-	</start>
-    }
-}
+		</route>}
+append_if [expr $use_framebuffer &&  [have_include "power_on/qemu"]] config {
+		<config width="1280" height="960" depth="16" buffered="yes"/>}
+append_if [expr $use_framebuffer && ![have_include "power_on/qemu"]] config {
+		<config buffered="yes"/>}
+append_if $use_framebuffer config {
+	</start> }
 
 if {!$use_fancy_stuff} {
 append config {
-	<start name="seoul" priority="-3" caps="200" ld="no">
+	<start name="seoul" priority="-3" caps="800">
 		<binary name="seoul"/>}
 append config "
 		<resource name=\"RAM\" quantum=\"$memory_vmm_vm\"/>"
@@ -266,13 +286,9 @@ append_if [expr $use_nic_session && $use_nic_bridge] config {
 			<service name="Nic"> <child name="nic_bridge"/> </service>}
 append_if [expr $use_nic_session && !$use_nic_bridge] config {
 			<service name="Nic"> <child name="nic_drv"/> </service>}
-if {$use_framebuffer} {
-    append config "
-			<service name=\"Framebuffer\"><child name=\"$fb_name\"/></service>"
-    
-}
 append_if $use_genode_iso config {
 			<service name="ROM" unscoped_label="seoul"> <parent/> </service>
+			<service name="ROM" unscoped_label="ld.lib.so"> <parent/> </service>
 			<service name="ROM" label="vm_seoul.cfg"> <parent/> </service>
 			<service name="ROM" label="platform_info"> <parent/> </service>
 			<service name="ROM"><child name="iso9660"/></service>}
@@ -293,17 +309,28 @@ append_if $use_usb config {
 		</config>
 	</start>}
 
-append_if $use_fancy_stuff config {
-	<start name="nitpicker" priority="-1">
+append config {
+	<start name="nitpicker" priority="-1" caps="120">
 		<resource name="RAM" quantum="8M"/>
 		<config>
 			<report focus="yes" />
 			<domain name="pointer" layer="1" content="client" label="no" origin="pointer" />
 			<domain name="panel"   layer="2" content="client" label="no" focus="none" />
+			<domain name="init.1"  layer="3" content="client" focus="click"
+			                       hover="always" xpos="20" ypos="30" height="-20"/>
+			<domain name="init.2"  layer="3" content="client" focus="click"
+			                       hover="always" xpos="30" ypos="40" height="-20"/>
+			<domain name="init.3"  layer="3" content="client" focus="click"
+			                       hover="always" xpos="40" ypos="50" height="-20"/>
 			<domain name=""        layer="3" content="client" focus="click"
-			                       hover="always" ypos="18" height="-18" />
+			                       hover="always" xpos="10" ypos="20" height="-20"/>
 			<policy label_prefix="pointer"    domain="pointer"/>
 			<policy label_prefix="status_bar" domain="panel"/>
+
+			<policy label_prefix="launchpad -> init.1" domain="init.1"/>
+			<policy label_prefix="launchpad -> init.2" domain="init.2"/>
+			<policy label_prefix="launchpad -> init.3" domain="init.3"/>
+
 			<default-policy domain=""/>
 		</config>
 		<route>
@@ -314,22 +341,32 @@ append_if $use_fancy_stuff config {
 		</route>
 		<provides><service name="Nitpicker"/></provides>
 	</start>
+
 	<start name="pointer">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="2M"/>
 	</start>
-	<start name="status_bar">
-		<resource name="RAM" quantum="1M"/>
-		<route>
-			<service name="ROM" label="focus"> <child name="report_rom"/> </service>
-			<any-service> <parent/> <any-child/> </any-service>
-		</route>
-	</start>
+
 	<start name="report_rom">
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
 			<policy label="status_bar -> focus" report="nitpicker -> focus"/>
 		</config>
+	</start>}
+
+append_if $use_top config {
+	<start name="top">
+		<resource name="RAM" quantum="2M"/>
+		<config period_ms="10000"/>
+	</start>}
+
+append_if $use_fancy_stuff config {
+	<start name="status_bar">
+		<resource name="RAM" quantum="1M"/>
+		<route>
+			<service name="ROM" label="focus"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
 	</start>
 	<start name="launchpad" priority="-2" caps="1500">
 		<resource name="RAM" quantum="64000M"/>
@@ -338,12 +375,6 @@ append_if $use_fancy_stuff config {
 			<service name="Nic"><child name="nic_bridge"/></service>
 			<any-service><parent/><any-child/></any-service>
 		</route>
-	</start>}
-
-append_if $use_top config {
-	<start name="top">
-		<resource name="RAM" quantum="2M"/>
-		<config period_ms="10000"/>
 	</start>}
 
 append config {
@@ -374,20 +405,8 @@ if {$use_fancy_stuff} {
 				<service name="Nic"/>
 				<service name="Block"/>
 				<service name="Rtc"/>
+				<service name="VM"/>
 			</parent-provides>
-
-			<start name="fb.seoul" priority="-1" caps="100">
-				<binary name="liquid_fb"/>
-				<resource name="RAM" quantum="16M"/>
-				<provides>
-					<service name="Framebuffer"/>
-					<service name="Input"/>
-				</provides>
-				<route>
-					<any-service><parent/></any-service>
-				</route>
-				<config xpos="10" ypos="10" width="800" height="600" animate="off"/>
-			</start>
 
 			<start name="seoul" priority="-1" caps="200">
 				<binary name="seoul"/>
@@ -395,8 +414,6 @@ if {$use_fancy_stuff} {
 				<route>
 					<service name="Timer"><parent/></service>
 					<service name="Nic"><parent/></service>
-					<service name="Input"><child name="fb.seoul"/></service>
-					<service name="Framebuffer"><child name="fb.seoul"/></service>
 					<any-service><parent/></any-service>
 				</route>
 				<configfile name="vm_seoul.cfg"/>
@@ -415,8 +432,6 @@ install_config $config
 
 # generic modules
 set boot_modules {
-	core ld.lib.so init
-	timer
 	rtc_drv
 	seoul
 	vm_seoul.cfg
@@ -426,16 +441,12 @@ lappend_if [expr !$use_usb]   boot_modules ps2_drv
 lappend_if $use_usb           boot_modules usb_drv
 lappend_if $use_block_ram     boot_modules ram_block
 lappend_if $use_block_sata    boot_modules ahci_drv
-lappend_if $use_nic_session   boot_modules nic_drv
+lappend_if $use_nic_session   boot_modules ipxe_nic_drv
 lappend_if $use_nic_bridge    boot_modules nic_bridge
-lappend_if $use_framebuffer   boot_modules $fb_name
+lappend_if $use_framebuffer   boot_modules vesa_fb_drv
 
-lappend_if $use_fancy_stuff   boot_modules nitpicker
-lappend_if $use_fancy_stuff   boot_modules pointer
 lappend_if $use_fancy_stuff   boot_modules status_bar
-lappend_if $use_fancy_stuff   boot_modules liquid_fb
 lappend_if $use_fancy_stuff   boot_modules launchpad
-lappend_if $use_fancy_stuff   boot_modules nitlog
 lappend_if $use_fancy_stuff   boot_modules launchpad-config
 lappend_if $use_fancy_stuff   boot_modules report_rom
 

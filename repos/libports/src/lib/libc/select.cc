@@ -3,6 +3,7 @@
  * \author Christian Prochaska
  * \author Christian Helmuth
  * \author Emery Hemingway
+ * \author Norman Feske
  * \date   2010-01-21
  *
  * the 'select()' implementation is partially based on the lwip version as
@@ -22,6 +23,7 @@
 
 /* Genode includes */
 #include <base/log.h>
+#include <base/exception.h>
 #include <util/reconstructible.h>
 
 /* Libc includes */
@@ -32,12 +34,35 @@
 #include <sys/select.h>
 #include <signal.h>
 
-#include "task.h"
-
+/* libc-internal includes */
+#include <internal/init.h>
+#include <internal/signal.h>
+#include <internal/suspend.h>
+#include <internal/resume.h>
+#include <internal/select.h>
+#include <internal/errno.h>
 
 namespace Libc {
 	struct Select_cb;
 	struct Select_cb_list;
+}
+
+using namespace Libc;
+
+
+static Suspend      *_suspend_ptr;
+static Resume       *_resume_ptr;
+static Select       *_select_ptr;
+static Libc::Signal *_signal_ptr;
+
+
+void Libc::init_select(Suspend &suspend, Resume &resume, Select &select,
+                       Signal &signal)
+{
+	_suspend_ptr = &suspend;
+	_resume_ptr  = &resume;
+	_select_ptr  = &select;
+	_signal_ptr  = &signal;
 }
 
 
@@ -64,14 +89,14 @@ struct Libc::Select_cb
 
 struct Libc::Select_cb_list
 {
-	Genode::Lock  _mutex;
-	Select_cb    *_first = nullptr;
+	Lock       _mutex;
+	Select_cb *_first = nullptr;
 
-	struct Guard : Genode::Lock::Guard
+	struct Guard : Lock::Guard
 	{
-Select_cb_list *l;
+		Select_cb_list *l;
 
-		Guard(Select_cb_list &list) : Genode::Lock::Guard(list._mutex), l(&list) { }
+		Guard(Select_cb_list &list) : Lock::Guard(list._mutex), l(&list) { }
 	};
 
 	void unsynchronized_insert(Select_cb *scb)
@@ -110,7 +135,11 @@ Select_cb_list *l;
 };
 
 /** The global list of tasks waiting for select */
-static Libc::Select_cb_list select_cb_list;
+static Libc::Select_cb_list &select_cb_list()
+{
+	static Select_cb_list inst;
+	return inst;
+}
 
 
 /**
@@ -140,7 +169,10 @@ static int selscan(int nfds,
 	if (out_writefds)  FD_ZERO(out_writefds);
 	if (out_exceptfds) FD_ZERO(out_exceptfds);
 
-	for (Libc::Plugin *plugin = Libc::plugin_registry()->first();
+	if (nfds > FD_SETSIZE)
+		return Libc::Errno(EINVAL);
+
+	for (Plugin *plugin = plugin_registry()->first();
 	     plugin;
 	     plugin = plugin->next()) {
 		if (plugin->supports_select(nfds, in_readfds, in_writefds, in_exceptfds, &tv_0)) {
@@ -165,7 +197,7 @@ static int selscan(int nfds,
 				}
 				nready += plugin_nready;
 			} else if (plugin_nready < 0) {
-				Genode::error("plugin->select() returned error value ", plugin_nready);
+				error("plugin->select() returned error value ", plugin_nready);
 			}
 		}
 	}
@@ -183,7 +215,7 @@ static void select_notify()
 	/* check for each waiting select() function if one of its fds is ready now
 	 * and if so, wake all up */
 
-	select_cb_list.for_each([&] (Libc::Select_cb &scb) {
+	select_cb_list().for_each([&] (Select_cb &scb) {
 		scb.nready = selscan(scb.nfds,
 		                     &scb.readfds, &scb.writefds, &scb.exceptfds,
 		                     &tmp_readfds,  &tmp_writefds,  &tmp_exceptfds);
@@ -196,12 +228,17 @@ static void select_notify()
 		}
 	});
 
-	if (resume_all)
-		Libc::resume_all();
+	if (resume_all) {
+		struct Missing_call_of_init_select : Exception { };
+		if (!_resume_ptr)
+			throw Missing_call_of_init_select();
+
+		_resume_ptr->resume_all();
+	}
 }
 
 
-static void print(Genode::Output &output, timeval *tv)
+static inline void print(Output &output, timeval *tv)
 {
 	if (!tv) {
 		print(output, "nullptr");
@@ -215,14 +252,13 @@ static void print(Genode::Output &output, timeval *tv)
 }
 
 
-extern "C" int
-__attribute__((weak))
-_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-        struct timeval *tv)
+extern "C" __attribute__((weak))
+int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+           struct timeval *tv)
 {
 	fd_set in_readfds, in_writefds, in_exceptfds;
 
-	Genode::Constructible<Libc::Select_cb> select_cb;
+	Constructible<Select_cb> select_cb;
 
 	/* initialize the select notification function pointer */
 	if (!libc_select_notify)
@@ -237,7 +273,7 @@ _select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		 * We use the guard directly to atomically check if any descripor is
 		 * ready, but insert into select-callback list otherwise.
 		 */
-		Libc::Select_cb_list::Guard guard(select_cb_list);
+		Select_cb_list::Guard guard(select_cb_list());
 
 		int const nready = selscan(nfds,
 		                           &in_readfds, &in_writefds, &in_exceptfds,
@@ -255,39 +291,66 @@ _select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 
 		select_cb.construct(nfds, in_readfds, in_writefds, in_exceptfds);
 
-		select_cb_list.unsynchronized_insert(&(*select_cb));
+		select_cb_list().unsynchronized_insert(&(*select_cb));
 	}
 
 	struct Timeout
 	{
 		timeval const *_tv;
 		bool    const  valid    { _tv != nullptr };
-		unsigned long  duration {
-			valid ? (unsigned long)_tv->tv_sec*1000 + _tv->tv_usec/1000 : 0UL };
+		Genode::uint64_t  duration {
+			valid ? (Genode::uint64_t)_tv->tv_sec*1000 + _tv->tv_usec/1000 : 0UL };
 
 		bool expired() const { return valid && duration == 0; };
 
 		Timeout(timeval *tv) : _tv(tv) { }
 	} timeout { tv };
 
-	struct Check : Libc::Suspend_functor {
-		struct Timeout  *timeout;
-		Libc::Select_cb *select_cb;
+	struct Check : Suspend_functor
+	{
+		struct Timeout *timeout;
+		Select_cb      *select_cb;
 
-		Check(Timeout *timeout, Libc::Select_cb * select_cb)
+		Check(Timeout *timeout, Select_cb * select_cb)
 		: timeout(timeout), select_cb(select_cb) { }
 
 		bool suspend() override {
 			return !timeout->expired() && select_cb->nready == 0; }
 	} check ( &timeout, &*select_cb );
 
-	while (!timeout.expired() && select_cb->nready == 0)
-		timeout.duration = Libc::suspend(check, timeout.duration);
+	{
+		struct Missing_call_of_init_select : Exception { };
+		if (!_suspend_ptr || !_signal_ptr)
+			throw Missing_call_of_init_select();
+	}
 
-	select_cb_list.remove(&(*select_cb));
+	unsigned const orig_signal_count = _signal_ptr->count();
+
+	auto signal_occurred_during_select = [&] ()
+	{
+		return _signal_ptr->count() != orig_signal_count;
+	};
+
+	for (;;) {
+		if (timeout.expired())
+			break;
+
+		if (select_cb->nready != 0)
+			break;
+
+		if (signal_occurred_during_select())
+			break;
+
+		timeout.duration = _suspend_ptr->suspend(check, timeout.duration);
+	}
+
+	select_cb_list().remove(&(*select_cb));
 
 	if (timeout.expired())
 		return 0;
+
+	if (signal_occurred_during_select())
+		return Errno(EINTR);
 
 	/* not timed out -> results have been stored in select_cb by select_notify() */
 
@@ -298,21 +361,18 @@ _select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	return select_cb->nready;
 }
 
+extern "C" __attribute__((alias("select")))
+int __sys_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+                 struct timeval *tv);
 
-extern "C" int
-__attribute__((weak))
-select(int nfds, fd_set *readfds, fd_set *writefds,
-       fd_set *exceptfds, struct timeval *timeout)
-{
-	return _select(nfds, readfds, writefds, exceptfds, timeout);
-}
+extern "C" __attribute__((alias("select")))
+int _select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+            struct timeval *tv);
 
 
-extern "C" int
-__attribute__((weak))
-_pselect(int nfds, fd_set *readfds, fd_set *writefds,
-         fd_set *exceptfds, const struct timespec *timeout,
-         const sigset_t *sigmask)
+extern "C" __attribute__((weak))
+int pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+            const struct timespec *timeout, const sigset_t *sigmask)
 {
 	struct timeval tv;
 	sigset_t origmask;
@@ -332,15 +392,9 @@ _pselect(int nfds, fd_set *readfds, fd_set *writefds,
 	return nready;
 }
 
-
-extern "C" int
-__attribute__((weak))
-pselect(int nfds, fd_set *readfds, fd_set *writefds,
-        fd_set *exceptfds, const struct timespec *timeout,
-        const sigset_t *sigmask)
-{
-	return _pselect(nfds, readfds, writefds, exceptfds, timeout, sigmask);
-}
+extern "C" __attribute__((alias("pselect")))
+int __sys_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
+                  const struct timespec *timeout, const sigset_t *sigmask);
 
 
 /****************************************
@@ -362,14 +416,14 @@ int Libc::Select_handler_base::select(int nfds, fd_set &readfds,
 
 	/* remove potentially enqueued callback from list */
 	if (_select_cb->constructed())
-		select_cb_list.remove(&(**_select_cb));
+		select_cb_list().remove(&(**_select_cb));
 
 	{
 		/*
 		 * We use the guard directly to atomically check is any descripor is
 		 * ready, and insert into select-callback list otherwise.
 		 */
-		Libc::Select_cb_list::Guard guard(select_cb_list);
+		Select_cb_list::Guard guard(select_cb_list());
 
 		int const nready = selscan(nfds,
 		                           &in_readfds, &in_writefds, &in_exceptfds,
@@ -383,10 +437,14 @@ int Libc::Select_handler_base::select(int nfds, fd_set &readfds,
 
 		_select_cb->construct(nfds, in_readfds, in_writefds, in_exceptfds);
 
-		select_cb_list.unsynchronized_insert(&(**_select_cb));
+		select_cb_list().unsynchronized_insert(&(**_select_cb));
 	}
 
-	Libc::schedule_select(this);
+	struct Missing_call_of_init_select : Exception { };
+	if (!_select_ptr)
+		throw Missing_call_of_init_select();
+
+	_select_ptr->schedule_select(*this);
 
 	return 0;
 }
@@ -398,8 +456,10 @@ void Libc::Select_handler_base::dispatch_select()
 
 	if (select_cb->nready == 0) return;
 
-	select_cb_list.remove(&(*select_cb));
-	Libc::schedule_select(nullptr);
+	select_cb_list().remove(&(*select_cb));
+
+	if (_select_ptr)
+		_select_ptr->deschedule_select();
 
 	select_ready(select_cb->nready, select_cb->readfds,
 	             select_cb->writefds, select_cb->exceptfds);
@@ -410,6 +470,7 @@ Libc::Select_handler_base::Select_handler_base()
 :
 	_select_cb((Select_handler_cb*)malloc(sizeof(*_select_cb)))
 { }
+
 
 Libc::Select_handler_base::~Select_handler_base()
 { }

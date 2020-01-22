@@ -8,7 +8,7 @@ CC_WARN += -Wall
 SRC_CC = frontend/main.cc frontend/console.cc \
          frontend/VirtualBoxErrorInfoImpl.cpp \
          devices.cc drivers.cc dummies.cc libc.cc \
-         logger.cc mm.cc pdm.cc pgm.cc rt.cc sup.cc \
+         logger.cc mm.cc pdm.cc pgm.cc rt.cc \
          hm.cc thread.cc dynlib.cc unimpl.cc
 
 LIBS  += base
@@ -20,7 +20,7 @@ LIBS  += virtualbox5-bios virtualbox5-recompiler virtualbox5-runtime \
          virtualbox5-xml virtualbox5-main virtualbox5-apiwrap \
          virtualbox5-dis
 
-LIBS  += libc_terminal libc_pipe libiconv
+LIBS  += libc_pipe libiconv
 
 LIBS  += qemu-usb
 

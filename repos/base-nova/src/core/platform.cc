@@ -623,6 +623,7 @@ Platform::Platform()
 		if (mem_desc->type == Hip::Mem_desc::ACPI_RSDT) continue;
 		if (mem_desc->type == Hip::Mem_desc::ACPI_XSDT) continue;
 		if (mem_desc->type == Hip::Mem_desc::FRAMEBUFFER) continue;
+		if (mem_desc->type == Hip::Mem_desc::EFI_SYSTEM_TABLE) continue;
 
 		Hip::Mem_desc * mem_d = (Hip::Mem_desc *)mem_desc_base;
 		for (unsigned j = 0; j < num_mem_desc; j++, mem_d++) {
@@ -630,6 +631,7 @@ Platform::Platform()
 			if (mem_d->type == Hip::Mem_desc::ACPI_RSDT) continue;
 			if (mem_d->type == Hip::Mem_desc::ACPI_XSDT) continue;
 			if (mem_d->type == Hip::Mem_desc::FRAMEBUFFER) continue;
+			if (mem_d->type == Hip::Mem_desc::EFI_SYSTEM_TABLE) continue;
 			if (mem_d == mem_desc) continue;
 
 			/* if regions are disjunct all is fine */
@@ -650,11 +652,13 @@ Platform::Platform()
 	 * From now on, it is save to use the core allocators...
 	 */
 
+	uint64_t efi_sys_tab_phy = 0UL;
 	uint64_t rsdt = 0UL;
 	uint64_t xsdt = 0UL;
 
 	mem_desc = (Hip::Mem_desc *)mem_desc_base;
 	for (unsigned i = 0; i < num_mem_desc; i++, mem_desc++) {
+		if (mem_desc->type == Hip::Mem_desc::EFI_SYSTEM_TABLE) efi_sys_tab_phy = mem_desc->addr;
 		if (mem_desc->type == Hip::Mem_desc::ACPI_RSDT) rsdt = mem_desc->addr;
 		if (mem_desc->type == Hip::Mem_desc::ACPI_XSDT) xsdt = mem_desc->addr;
 		if (mem_desc->type != Hip::Mem_desc::MULTIBOOT_MODULE) continue;
@@ -685,6 +689,12 @@ Platform::Platform()
 				                          pages << get_page_size_log2(),
 				                          "platform_info", [&] ()
 				{
+					xml.node("kernel", [&] () { xml.attribute("name", "nova"); });
+					if (efi_sys_tab_phy) {
+						xml.node("efi-system-table", [&] () {
+							xml.attribute("address", String<32>(Hex(efi_sys_tab_phy)));
+						});
+					}
 					xml.node("acpi", [&] () {
 
 						xml.attribute("revision", 2); /* XXX */
@@ -849,8 +859,10 @@ Platform::Platform()
 			{
 				uint64_t sc_time = 0;
 
-				enum SYSCALL_OP { IDLE_SC = 0, CROSS_SC = 1 };
-				uint8_t syscall_op = (name == "cross") ? CROSS_SC : IDLE_SC;
+				enum SYSCALL_OP { IDLE_SC = 0, CROSS_SC = 1,
+				                  KILLED_SC = 2 };
+				uint8_t syscall_op =  (name == "cross")  ? CROSS_SC :
+				                     ((name == "killed") ? KILLED_SC : IDLE_SC);
 
 				uint8_t res = Nova::sc_ctrl(sc_sel, sc_time, syscall_op);
 				if (res != Nova::NOVA_OK)
@@ -858,7 +870,7 @@ Platform::Platform()
 				            ", res=", res);
 
 				return { Session_label("kernel"), Trace::Thread_name(name),
-				         Trace::Execution_time(sc_time), affinity };
+				         Trace::Execution_time(sc_time, sc_time), affinity };
 			}
 
 			Trace_source(Trace::Source_registry &registry,
@@ -885,6 +897,12 @@ Platform::Platform()
 		                                                       _cpus.width(), 1),
 		                                    sc_idle_base + kernel_cpu_id,
 		                                    "cross");
+
+		new (core_mem_alloc()) Trace_source(Trace::sources(),
+		                                    Affinity::Location(genode_cpu_id, 0,
+		                                                       _cpus.width(), 1),
+		                                    sc_idle_base + kernel_cpu_id,
+		                                    "killed");
 	}
 
 	/* add exception handler EC for core and EC root thread to trace sources */
@@ -910,7 +928,7 @@ Platform::Platform()
 			}
 
 			return { Session_label("core"), name,
-			         Trace::Execution_time(sc_time), location };
+			         Trace::Execution_time(sc_time, sc_time), location };
 		}
 
 		Core_trace_source(Trace::Source_registry &registry,
@@ -961,7 +979,7 @@ bool Mapped_mem_allocator::_map_local(addr_t virt_addr, addr_t phys_addr,
                                       unsigned size)
 {
 	/* platform_specific()->core_pd_sel() deadlocks if called from platform constructor */
-	Hip const &hip  = *(Hip const * const)__initial_sp;
+	Hip const &hip  = *(Hip const *)__initial_sp;
 	Genode::addr_t const core_pd_sel = hip.sel_exc;
 
 	map_local(core_pd_sel,

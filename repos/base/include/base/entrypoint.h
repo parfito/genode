@@ -48,14 +48,6 @@ class Genode::Entrypoint : Noncopyable
 			virtual void handle_io_progress() = 0;
 		};
 
-		/**
-		 * Functor for post signal-handler hook
-		 *
-		 * \deprecated
-		 * \noapi
-		 */
-		struct Post_signal_hook : Interface { virtual void function() = 0; };
-
 	private:
 
 		struct Signal_proxy : Interface
@@ -99,11 +91,11 @@ class Genode::Entrypoint : Noncopyable
 
 		Reconstructible<Signal_receiver> _sig_rec { };
 
-		Lock                               _deferred_signals_mutex { };
-		List<List_element<Signal_context>> _deferred_signals { };
+		Lock                                _deferred_signals_mutex { };
+		List<List_element<Signal_context> > _deferred_signals { };
 
 		void _handle_deferred_signals() { }
-		Constructible<Signal_handler<Entrypoint>> _deferred_signal_handler { };
+		Constructible<Signal_handler<Entrypoint> > _deferred_signal_handler { };
 
 		bool _suspended                = false;
 		void (*_suspended_callback) () = nullptr;
@@ -118,20 +110,11 @@ class Genode::Entrypoint : Noncopyable
 		Genode::Lock      _signal_pending_ack_lock { };
 
 		Io_progress_handler *_io_progress_handler { nullptr };
-		Post_signal_hook    *_post_signal_hook    { nullptr };
 
 		void _handle_io_progress()
 		{
 			if (_io_progress_handler != nullptr)
 				_io_progress_handler->handle_io_progress();
-		}
-
-		void _execute_post_signal_hook()
-		{
-			if (_post_signal_hook != nullptr)
-				_post_signal_hook->function();
-
-			_post_signal_hook = nullptr;
 		}
 
 		/*
@@ -141,7 +124,7 @@ class Genode::Entrypoint : Noncopyable
 		 * resume mechanism.
 		 */
 		void _handle_suspend() { _suspended = true; }
-		Constructible<Genode::Signal_handler<Entrypoint>> _suspend_dispatcher { };
+		Constructible<Genode::Signal_handler<Entrypoint> > _suspend_dispatcher { };
 
 		void _dispatch_signal(Signal &sig);
 		void _defer_signal(Signal &sig);
@@ -153,7 +136,7 @@ class Genode::Entrypoint : Noncopyable
 		bool                               _stop_signal_proxy { false };
 
 		void _handle_stop_signal_proxy() { _stop_signal_proxy = true; }
-		Constructible<Genode::Signal_handler<Entrypoint>> _stop_signal_proxy_handler { };
+		Constructible<Genode::Signal_handler<Entrypoint> > _stop_signal_proxy_handler { };
 
 		friend class Startup;
 
@@ -258,17 +241,6 @@ class Genode::Entrypoint : Noncopyable
 				throw Exception();
 			}
 			_io_progress_handler = &handler;
-		}
-
-		/**
-		 * Register hook functor to be called after signal was handled
-		 *
-		 * \deprecated
-		 * \noapi
-		 */
-		void schedule_post_signal_hook(Post_signal_hook *hook)
-		{
-			_post_signal_hook = hook;
 		}
 };
 

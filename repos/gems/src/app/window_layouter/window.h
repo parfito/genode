@@ -187,21 +187,24 @@ class Window_layouter::Window : public List_model<Window>::Element
 		{
 			_dragged_element = element;
 
-			_drag_left_border   = (element.type == Window::Element::LEFT)
-			                   || (element.type == Window::Element::TOP_LEFT)
-			                   || (element.type == Window::Element::BOTTOM_LEFT);
+			if (_resizeable) {
 
-			_drag_right_border  = (element.type == Window::Element::RIGHT)
-			                   || (element.type == Window::Element::TOP_RIGHT)
-			                   || (element.type == Window::Element::BOTTOM_RIGHT);
+				_drag_left_border   = (element.type == Window::Element::LEFT)
+				                   || (element.type == Window::Element::TOP_LEFT)
+				                   || (element.type == Window::Element::BOTTOM_LEFT);
 
-			_drag_top_border    = (element.type == Window::Element::TOP)
-			                   || (element.type == Window::Element::TOP_LEFT)
-			                   || (element.type == Window::Element::TOP_RIGHT);
+				_drag_right_border  = (element.type == Window::Element::RIGHT)
+				                   || (element.type == Window::Element::TOP_RIGHT)
+				                   || (element.type == Window::Element::BOTTOM_RIGHT);
 
-			_drag_bottom_border = (element.type == Window::Element::BOTTOM)
-			                   || (element.type == Window::Element::BOTTOM_LEFT)
-			                   || (element.type == Window::Element::BOTTOM_RIGHT);
+				_drag_top_border    = (element.type == Window::Element::TOP)
+				                   || (element.type == Window::Element::TOP_LEFT)
+				                   || (element.type == Window::Element::TOP_RIGHT);
+
+				_drag_bottom_border = (element.type == Window::Element::BOTTOM)
+				                   || (element.type == Window::Element::BOTTOM_LEFT)
+				                   || (element.type == Window::Element::BOTTOM_RIGHT);
+			}
 
 			_orig_geometry = _geometry;
 			_drag_geometry = _geometry;
@@ -463,12 +466,13 @@ class Window_layouter::Window : public List_model<Window>::Element
 
 		void finalize_drag_operation()
 		{
-			_dragged            = false;
 			_drag_left_border   = false;
 			_drag_right_border  = false;
 			_drag_top_border    = false;
 			_drag_bottom_border = false;
-			_dragged_size       = effective_inner_geometry().area();
+			_geometry           = effective_inner_geometry();
+			_dragged_size       = _geometry.area();
+			_dragged            = false;
 		}
 
 		void to_front_cnt(unsigned to_front_cnt) { _to_front_cnt = to_front_cnt; }

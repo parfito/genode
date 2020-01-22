@@ -27,6 +27,7 @@
 #include <kill_broadcaster.h>
 #include <vfs/dir_file_system.h>
 #include <vfs/simple_env.h>
+#include <time_info.h>
 
 namespace Noux {
 
@@ -98,7 +99,9 @@ connect_stdio(Genode::Env                                 &env,
               Vfs::File_system                            &root,
               Noux::Vfs_io_waiter_registry                &vfs_io_waiter_registry,
               Noux::Terminal_io_channel::Type              type,
-              Genode::Allocator                           &alloc)
+              Genode::Allocator                           &alloc,
+              Noux::Time_info                             &time_info,
+              Timer::Connection                           &timer)
 {
 	using namespace Vfs;
 	using namespace Noux;
@@ -142,7 +145,8 @@ connect_stdio(Genode::Env                                 &env,
 
 	return *new (alloc)
 		Vfs_io_channel(path.string(), root.leaf_path(path.string()),
-		               vfs_handle, vfs_io_waiter_registry, env.ep());
+		               vfs_handle, vfs_io_waiter_registry, env.ep(),
+		               time_info, timer);
 }
 
 
@@ -213,50 +217,25 @@ struct Noux::Main
 	/* initialize virtual file system */
 	Vfs::Global_file_system_factory _global_file_system_factory { _heap };
 
-	struct Io_response_handler : Vfs::Io_response_handler
+	struct Io_progress_handler : Genode::Entrypoint::Io_progress_handler
 	{
 		Vfs_io_waiter_registry io_waiter_registry { };
 
-		void handle_io_response(Vfs::Vfs_handle::Context *context) override
+		Io_progress_handler(Genode::Entrypoint &ep)
 		{
-			if (context) {
-				Vfs_handle_context *vfs_handle_context = static_cast<Vfs_handle_context*>(context);
-				vfs_handle_context->vfs_io_waiter.wakeup();
-				return;
-			}
+			ep.register_io_progress_handler(*this);
+		}
 
+		void handle_io_progress() override
+		{
 			io_waiter_registry.for_each([] (Vfs_io_waiter &r) {
 				r.wakeup();
 			});
 		}
 
-	} _io_response_handler { };
+	} _io_response_handler { _env.ep() };
 
-	struct Vfs_env : Vfs::Env, Vfs::Watch_response_handler
-	{
-		Main &_main;
-
-		Vfs::Global_file_system_factory _fs_factory { _main._heap };
-		Vfs::Dir_file_system            _root_dir;
-
-		Vfs_env(Main &main, Xml_node config)
-		: _main(main), _root_dir(*this, config, _fs_factory) { }
-
-		/**
-		 * Vfs::Watch_response_handler interface
-		 */
-		void handle_watch_response(Vfs::Vfs_watch_handle::Context*) override { }
-
-		/**
-		 * Vfs::Env interface
-		 */
-		Genode::Env                 &env()           override { return _main._env; }
-		Allocator                   &alloc()         override { return _main._heap; }
-		Vfs::File_system            &root_dir()      override { return _root_dir; }
-		Vfs::Io_response_handler    &io_handler()    override { return _main._io_response_handler; }
-		Vfs::Watch_response_handler &watch_handler() override { return *this; }
-
-	} _vfs_env { *this, _config.xml().sub_node("fstab") };
+	Vfs::Simple_env _vfs_env { _env, _heap, _config.xml().sub_node("fstab") };
 
 	Vfs::File_system &_root_dir = _vfs_env.root_dir();
 
@@ -265,6 +244,8 @@ struct Noux::Main
 	Timer::Connection _timer_connection { _env };
 
 	User_info _user_info { _config.xml() };
+
+	Time_info _time_info { _env, _config.xml() };
 
 	Signal_handler<Main> _destruct_handler {
 		_env.ep(), *this, &Main::_handle_destruct };
@@ -298,6 +279,7 @@ struct Noux::Main
 	Noux::Child _init_child { _name_of_init_process(),
 	                          _verbose,
 	                          _user_info,
+	                          _time_info,
 	                          0,
 	                          _kill_broadcaster,
 	                          _timer_connection,
@@ -327,13 +309,13 @@ struct Noux::Main
 	Shared_pointer<Io_channel>
 		_channel_0 { &connect_stdio(_env, _terminal, _config.xml(), _root_dir,
 		             _io_response_handler.io_waiter_registry,
-		             Tio::STDIN,  _heap), _heap },
+		             Tio::STDIN,  _heap, _time_info, _timer_connection), _heap },
 		_channel_1 { &connect_stdio(_env, _terminal, _config.xml(), _root_dir,
 		            _io_response_handler.io_waiter_registry,
-		             Tio::STDOUT, _heap), _heap },
+		             Tio::STDOUT, _heap, _time_info, _timer_connection), _heap },
 		_channel_2 { &connect_stdio(_env, _terminal, _config.xml(), _root_dir,
 		             _io_response_handler.io_waiter_registry,
-		             Tio::STDERR, _heap), _heap };
+		             Tio::STDERR, _heap, _time_info, _timer_connection), _heap };
 
 	Main(Env &env) : _env(env)
 	{

@@ -113,6 +113,7 @@ namespace Nova {
 		struct Mem_desc
 		{
 			enum Type {
+				EFI_SYSTEM_TABLE    = -7,
 				HYPERVISOR_LOG      = -6,
 				FRAMEBUFFER         = -5,
 				ACPI_XSDT           = -4,
@@ -185,7 +186,7 @@ namespace Nova {
 
 			unsigned long desc_addr = reinterpret_cast<unsigned long>(this) +
 			                          cpu_desc_offset + i * cpu_desc_size;
-			return reinterpret_cast<Cpu_desc const * const>(desc_addr);
+			return reinterpret_cast<Cpu_desc const *>(desc_addr);
 		}
 
 		bool is_cpu_enabled(unsigned i) const {

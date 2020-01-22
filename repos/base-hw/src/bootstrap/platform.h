@@ -27,7 +27,7 @@ namespace Bootstrap {
 
 	using Genode::addr_t;
 	using Genode::size_t;
-	using Hw::Boot_info;
+	using Boot_info = Hw::Boot_info<::Board::Boot_info>;
 	using Hw::Mmio_space;
 	using Hw::Mapping;
 	using Hw::Memory_region;
@@ -45,9 +45,8 @@ class Bootstrap::Platform
 			Memory_region_array early_ram_regions { };
 			Memory_region_array late_ram_regions  { };
 			Mmio_space const    core_mmio;
-			Hw::Acpi_rsdp       acpi_rsdp         { };
-			Hw::Framebuffer     framebuffer       { };
 			unsigned            cpus              { NR_OF_CPUS };
+			::Board::Boot_info  info              { };
 
 			Board();
 		};
@@ -123,8 +122,6 @@ class Bootstrap::Platform
 		};
 
 		Board                     board     { };
-		Bootstrap::Cpu            cpu       { };
-		Bootstrap::Pic            pic       { };
 		Ram_allocator             ram_alloc { };
 		Memory_region const       bootstrap_region;
 		Genode::Constructible<Pd> core_pd { };

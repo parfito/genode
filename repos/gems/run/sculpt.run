@@ -30,7 +30,10 @@ install_config {
 		<service name="CPU"/>
 		<service name="LOG"/>
 		<service name="TRACE"/>
+		<service name="VM"/>
 	</parent-provides>
+
+	<affinity-space width="2" height="1"/>
 
 	<default-route>
 		<any-service> <parent/> <any-child/> </any-service>
@@ -58,6 +61,7 @@ install_config {
 			<policy label="pointer -> xray"
 			        report="global_keys_handler -> leitzentrale"/>
 			<policy label="pointer -> shape"    report="shape"/>
+			<policy label="clipboard -> focus"  report="nitpicker -> focus"/>
 			<policy label="drivers -> capslock" report="global_keys_handler -> capslock"/>
 			<policy label="runtime -> capslock" report="global_keys_handler -> capslock"/>
 			<policy label="drivers -> numlock"  report="global_keys_handler -> numlock"/>
@@ -66,6 +70,7 @@ install_config {
 			        report="global_keys_handler -> leitzentrale"/>
 			<policy label="nit_focus -> slides"
 			        report="global_keys_handler -> slides"/>
+			<policy label="nit_focus -> hover" report="nitpicker -> hover"/>
 			<policy label="slides_nit_fb_config -> slides"
 			        report="global_keys_handler -> slides"/>
 			<policy label="leitzentrale -> manager -> displays"
@@ -109,10 +114,12 @@ install_config {
 					<rom name="drivers"       label="drivers.config"/>
 					<rom name="deploy"        label="manual_deploy.config"/>
 					<rom name="usb"           label="usb.config"/>
+					<rom name="clipboard"     label="clipboard.config"/>
 					<rom name="en_us.chargen"/>
-					<rom name="fr.chargen"/>
-					<rom name="de.chargen"/>
 					<rom name="de_ch.chargen"/>
+					<rom name="de_de.chargen"/>
+					<rom name="fr_ch.chargen"/>
+					<rom name="fr_fr.chargen"/>
 					<rom name="special.chargen"/>
 					<rom name="vimrc"/>
 					<tar name="launcher.tar"/>
@@ -285,24 +292,34 @@ install_config {
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="ROM"/> </provides>
 		<config>
+			<input name="lockscreen_enabled" rom="hover" node="hover">
+				<attribute name="label" /> </input>
 			<input name="leitzentrale_enabled" rom="leitzentrale" node="leitzentrale">
 				<attribute name="enabled" /> </input>
 			<input name="slides_enabled" rom="slides" node="slides">
 				<attribute name="enabled" /> </input>
 			<output node="focus">
 				<if>
-					<has_value input="leitzentrale_enabled" value="yes" />
+					<has_value input="lockscreen_enabled" value="lock_screen" />
 					<then>
-						<attribute name="label" value="leitzentrale -> manager -> fader -> "/>
+						<attribute name="label" value="lock_screen"/>
 					</then>
 					<else>
 						<if>
-							<has_value input="slides_enabled" value="yes" />
+							<has_value input="leitzentrale_enabled" value="yes" />
 							<then>
-								<attribute name="label" value="slides"/>
+								<attribute name="label" value="leitzentrale -> manager -> fader -> "/>
 							</then>
 							<else>
-								<attribute name="label" value="runtime -> focus"/>
+								<if>
+									<has_value input="slides_enabled" value="yes" />
+									<then>
+										<attribute name="label" value="slides"/>
+									</then>
+									<else>
+										<attribute name="label" value="runtime -> focus"/>
+									</else>
+								</if>
 							</else>
 						</if>
 					</else>
@@ -310,6 +327,7 @@ install_config {
 			</output>
 		</config>
 		<route>
+			<service name="ROM" label="hover">        <child name="report_rom"/> </service>
 			<service name="ROM" label="leitzentrale"> <child name="report_rom"/> </service>
 			<service name="ROM" label="slides">       <child name="report_rom"/> </service>
 			<any-service> <parent/> </any-service>
@@ -366,9 +384,23 @@ install_config {
 		</route>
 	</start>
 
+	<start name="clipboard" priority="-2">
+		<resource name="RAM" quantum="2M"/>
+		<provides>
+			<service name="ROM"/> <service name="Report"/>
+		</provides>
+		<route>
+			<service name="ROM" label="config">
+				<child name="config_fs_rom" label="clipboard"/> </service>
+			<service name="ROM" label="focus"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
 	<start name="leitzentrale" caps="4000" priority="-2">
 		<binary name="init"/>
 		<resource name="RAM" quantum="164M"/>
+		<affinity xpos="1" width="1"/> <!-- decouple leitzentrale from boot CPU -->
 		<provides> <service name="Nitpicker"/> </provides>
 		<route>
 			<service name="LOG"> <child name="log"/> </service>
@@ -435,9 +467,17 @@ install_config {
 				<child name="leitzentrale"/> </service>
 			<service name="Nitpicker" label="backdrop">
 				<child name="nitpicker" label="backdrop"/> </service>
+			<service name="Nitpicker" label="lock_screen">
+				<child name="nitpicker" label="lock_screen"/> </service>
 			<service name="Nitpicker"> <child name="nitpicker"/> </service>
 			<service name="Timer"> <child name="timer"/> </service>
 			<service name="Report" label_suffix="-> shape"> <child name="pointer"/> </service>
+			<service name="Report" label="inspect terminal -> clipboard">
+				<child name="clipboard" label="leitzentrale -> manager -> fader ->  -> clipboard"/> </service>
+			<service name="ROM" label="inspect terminal -> clipboard">
+				<child name="clipboard" label="leitzentrale -> manager -> fader ->  -> clipboard"/> </service>
+			<service name="Report" label_suffix="-> clipboard"> <child name="clipboard"/> </service>
+			<service name="ROM"    label_suffix="-> clipboard"> <child name="clipboard"/> </service>
 			<service name="Report" label="runtime_view -> hover">
 				<child name="report_rom"/> </service>
 			<service name="Report"> <child name="fs_report"/> </service>
@@ -470,7 +510,7 @@ file copy -force [genode_dir]/repos/gems/run/sculpt/machine.vbox [run_dir]/genod
 file copy -force [genode_dir]/repos/gems/recipes/raw/drivers_managed-pc/drivers.config \
                  [run_dir]/genode/drivers.config
 
-foreach file { fr.chargen en_us.chargen de.chargen de_ch.chargen special.chargen } {
+foreach file { en_us.chargen de_ch.chargen de_de.chargen fr_ch.chargen fr_fr.chargen special.chargen } {
 	file copy -force [genode_dir]/repos/os/src/server/input_filter/$file \
 	                 [run_dir]/genode/$file }
 
@@ -491,8 +531,10 @@ exec gzip -dc [genode_dir]/repos/gems/run/sculpt/machine.vdi.gz > [run_dir]/geno
 #
 # Define 'VERSION' ROM module
 #
+# Note: the string must be exactly 5 bytes long.
+#
 proc sculpt_version { } {
-	return "19.02" }
+	return "19.11" }
 
 # write file with newline (for producing nice output when using 'cat /VERSION')
 set fd [open [run_dir]/genode/VERSION w]

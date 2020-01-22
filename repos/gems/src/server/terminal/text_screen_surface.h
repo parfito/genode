@@ -1,6 +1,7 @@
 /*
  * \brief  Terminal graphics backend for textual screen
  * \author Norman Feske
+ * \author Christian Helmuth
  * \date   2018-02-06
  */
 
@@ -90,6 +91,17 @@ class Terminal::Text_screen_surface
 			Point start() const { return Point(1, 1); }
 
 			bool valid() const { return columns*lines > 0; }
+
+			/**
+			 * Return character position at given pixel coordinates
+			 */
+			Position position(Point p) const
+			{
+				if (char_width.value == 0 || char_height == 0)
+					return Position { };
+
+				return Position((p.x() << 8) / char_width.value, p.y() / char_height);
+			}
 		};
 
 		/**
@@ -131,6 +143,29 @@ class Terminal::Text_screen_surface
 		Char_cell_array_character_screen _character_screen { _cell_array };
 
 		Decoder _decoder { _character_screen };
+
+		struct Selection
+		{
+			Position start { };
+			Position end   { };
+
+			bool defined = false;
+
+			bool selected(Position pos) const
+			{
+				return defined && pos.in_range(start, end);
+			}
+
+			template <typename FN>
+			void for_each_line(FN const &fn) const
+			{
+				for (int i = min(start.y, end.y); i <= max(start.y, end.y); i++)
+					fn(i);
+			}
+
+		} _selection { };
+
+		Position _pointer { -1, -1 };
 
 	public:
 
@@ -177,8 +212,7 @@ class Terminal::Text_screen_surface
 			{
 				Color const bg_color =
 					_palette.background(Color_palette::Index{0},
-					                    Color_palette::Highlighted{false},
-					                    Color_palette::Inverse{false});
+					                    Color_palette::Highlighted{false});
 				Rect r[4] { };
 				Rect const all(Point(0, 0), _geometry.fb_size);
 				_geometry.fb_rect().cut(_geometry.used_rect(), &r[0], &r[1], &r[2], &r[3]);
@@ -197,20 +231,47 @@ class Terminal::Text_screen_surface
 					Fixpoint_number x { (int)_geometry.start().x() };
 					for (unsigned column = 0; column < _cell_array.num_cols(); column++) {
 
-						Char_cell     cell  = _cell_array.get_cell(column, line);
+						Char_cell const cell = _cell_array.get_cell(column, line);
 
-						_font.apply_glyph(cell.codepoint(), [&] (Glyph_painter::Glyph const &glyph) {
+						Codepoint codepoint = cell.codepoint();
+
+						/* display absent codepoints as whitespace */
+						bool const codepoint_valid = (codepoint.value != 0);
+
+						bool const selected = _selection.selected(Position(column, line))
+						                   && codepoint_valid;
+
+						bool const pointer = (_pointer == Position(column, line));
+
+						if (!codepoint_valid)
+							codepoint = Codepoint{' '};
+
+						_font.apply_glyph(codepoint, [&] (Glyph_painter::Glyph const &glyph) {
 
 							Color_palette::Highlighted const highlighted { cell.highlight() };
-							Color_palette::Inverse     const inverse     { cell.inverse() };
 
-							Color fg_color =
-								_palette.foreground(Color_palette::Index{cell.colidx_fg()},
-								                    highlighted, inverse);
+							Color_palette::Index fg_idx { cell.colidx_fg() };
+							Color_palette::Index bg_idx { cell.colidx_bg() };
 
-							Color bg_color =
-								_palette.background(Color_palette::Index{cell.colidx_bg()},
-								                    highlighted, inverse);
+							/* swap color index for inverse cells */
+							if (cell.inverse()) {
+								Color_palette::Index tmp { fg_idx };
+								fg_idx = bg_idx;
+								bg_idx = tmp;
+							}
+
+							Color fg_color = _palette.foreground(fg_idx, highlighted);
+							Color bg_color = _palette.background(bg_idx, highlighted);
+
+							if (selected) {
+								bg_color = Color(180, 180, 180);
+								fg_color = Color( 50, 50,   50);
+							}
+
+							if (pointer) {
+								bg_color = Color(220, 220, 220);
+								fg_color = Color( 50, 50,   50);
+							}
 
 							if (cell.has_cursor()) {
 								fg_color = Color( 63,  63,  63);
@@ -267,6 +328,8 @@ class Terminal::Text_screen_surface
 
 		void apply_character(Character c)
 		{
+			clear_selection();
+
 			/* submit character to sequence decoder */
 			_decoder.insert(c);
 		}
@@ -280,6 +343,110 @@ class Terminal::Text_screen_surface
 		 * Return size in colums/rows
 		 */
 		Area size() const { return _geometry.size(); }
+
+		/**
+		 * Set pointer position in pixels (to show the cursor)
+		 */
+		void pointer(Point pointer)
+		{
+			auto position_valid = [&] (Position pos) {
+				return pos.y >= 0 && pos.y < (int)_geometry.lines; };
+
+			/* update old position */
+			if (position_valid(_pointer))
+				_cell_array.mark_line_as_dirty(_pointer.y);
+
+			_pointer = _geometry.position(pointer);
+
+			/* update new position */
+			if (position_valid(_pointer))
+				_cell_array.mark_line_as_dirty(_pointer.y);
+		}
+
+		/**
+		 * Set anchor point of selection
+		 *
+		 * \param pointer  pointer position in pixels
+		 */
+		void start_selection(Point pointer)
+		{
+			if (_selection.defined)
+				clear_selection();
+
+			_selection.start = _geometry.position(pointer);
+
+			define_selection(pointer);
+		}
+
+		/**
+		 * Set end position of current selection
+		 *
+		 * \param pointer  pointer position in pixels
+		 */
+		void define_selection(Point pointer)
+		{
+			_selection.for_each_line([&] (int line) {
+				_cell_array.mark_line_as_dirty(line); });
+
+			_selection.end = _geometry.position(pointer);
+			_selection.defined = true;
+
+			_selection.for_each_line([&] (int line) {
+				_cell_array.mark_line_as_dirty(line); });
+		}
+
+		void clear_selection()
+		{
+			if (!_selection.defined)
+				return;
+
+			_selection.for_each_line([&] (int line) {
+				_cell_array.mark_line_as_dirty(line); });
+
+			_selection.defined = false;
+		}
+
+		template <typename FN>
+		void for_each_selected_character(FN const &fn) const
+		{
+			for (unsigned row = 0; row < _geometry.lines; row++) {
+				bool skip_remaining_chars_on_row = false;
+
+				for (unsigned column = 0; column < _geometry.columns; column++) {
+
+					if (skip_remaining_chars_on_row)
+						continue;
+
+					if (!_selection.selected(Position(column, row)))
+						continue;
+
+					Codepoint const c { _cell_array.get_cell(column, row).value };
+
+					if (c.value == 0) {
+
+						auto remaining_line_empty = [&] ()
+						{
+							for (unsigned i = column + 1; i < _geometry.columns; i++)
+								if (_cell_array.get_cell(i, row).value)
+									return false;
+
+							return true;
+						};
+
+						/* generate one line break at the end of a selected line */
+						if (remaining_line_empty()) {
+							fn(Codepoint{'\n'});
+							skip_remaining_chars_on_row = true;
+
+						} else {
+							fn(Codepoint{' '});
+						}
+					} else {
+						fn(c);
+					}
+				}
+			}
+		}
 };
 
 #endif /* _TEXT_SCREEN_SURFACE_H_ */

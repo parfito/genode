@@ -469,15 +469,11 @@ class Table_wrapper
 		Table_wrapper(Acpi::Memory &memory, addr_t base)
 		: _base(base), _table(0)
 		{
-			/* if table is on page boundary, map two pages, otherwise one page */
-			size_t const map_size = 0x1000UL - _offset() < 8 ? 0x1000UL : 1UL;
-
 			/* make table header accessible */
-			_table = reinterpret_cast<Generic *>(memory.phys_to_virt(base, map_size));
+			_table = reinterpret_cast<Generic *>(memory.map_region(base, 8));
 
-			/* table size is known now - make it complete accessible */
-			if (_offset() + _table->size > 0x1000UL)
-				memory.phys_to_virt(base, _table->size);
+			/* table size is known now - make it completely accessible (in place) */
+			memory.map_region(base, _table->size);
 
 			memset(_name, 0, 5);
 			memcpy(_name, _table->signature, 4);
@@ -917,6 +913,8 @@ class Element : private List<Element>::Element
 				if (data[0] != SUB_DEVICE)
 					return;
 
+				[[fallthrough]];
+
 			case SCOPE:
 			case METHOD:
 
@@ -934,6 +932,8 @@ class Element : private List<Element>::Element
 							return;
 				}
 
+				[[fallthrough]];
+
 			case DEVICE_NAME:
 				/* ACPI 19.2.5.1 - NameOp NameString DataRefObject */
 
@@ -944,10 +944,10 @@ class Element : private List<Element>::Element
 
 				/* ACPI 19.2.3 DataRefObject */
 				switch (data[_name_len + 1]) {
-					case QWORD_PREFIX: _para_len += 4;
-					case DWORD_PREFIX: _para_len += 2;
-					case  WORD_PREFIX: _para_len += 1;
-					case  BYTE_PREFIX: _para_len += 1;
+					case QWORD_PREFIX: _para_len += 4; [[fallthrough]];
+					case DWORD_PREFIX: _para_len += 2; [[fallthrough]];
+					case  WORD_PREFIX: _para_len += 1; [[fallthrough]];
+					case  BYTE_PREFIX: _para_len += 1; [[fallthrough]];
 					default: _para_len += 1;
 				}
 

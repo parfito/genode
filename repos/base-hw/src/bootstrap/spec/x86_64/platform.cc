@@ -69,6 +69,7 @@ Bootstrap::Platform::Board::Board()
             Memory_region { __initial_bx & ~0xFFFUL,
                             get_page_size() })
 {
+	Hw::Acpi_rsdp & acpi_rsdp = info.acpi_rsdp;
 	static constexpr size_t initial_map_max = 1024 * 1024 * 1024;
 
 	auto lambda = [&] (addr_t base, addr_t size) {
@@ -117,7 +118,10 @@ Bootstrap::Platform::Board::Board()
 				acpi_rsdp = rsdp;
 		},
 		[&] (Hw::Framebuffer const &fb) {
-			framebuffer = fb;
+			info.framebuffer = fb;
+		},
+		[&] (uint64_t const efi_sys_tab) {
+			info.efi_system_table = efi_sys_tab;
 		});
 	} else if (__initial_ax == Multiboot_info::MAGIC) {
 		for (unsigned i = 0; true; i++) {
@@ -174,7 +178,10 @@ Bootstrap::Platform::Board::Board()
 					Hw::for_each_apic_struct(*table,[&](Hw::Apic_madt const *e){
 						if (e->type == Hw::Apic_madt::LAPIC) {
 							Hw::Apic_madt::Lapic lapic(e);
-							cpus ++;
+
+							/* check if APIC is enabled in hardware */
+							if (lapic.valid())
+								cpus ++;
 						}
 					});
 				});
@@ -189,7 +196,10 @@ Bootstrap::Platform::Board::Board()
 					Hw::for_each_apic_struct(*table,[&](Hw::Apic_madt const *e){
 						if (e->type == Hw::Apic_madt::LAPIC) {
 							Hw::Apic_madt::Lapic lapic(e);
-							cpus ++;
+
+							/* check if APIC is enabled in hardware */
+							if (lapic.valid())
+								cpus ++;
 						}
 					});
 				});
@@ -267,6 +277,8 @@ static inline void ipi_to_all(Lapic &lapic, unsigned const boot_frame,
 
 unsigned Bootstrap::Platform::enable_mmu()
 {
+	using ::Board::Cpu;
+
 	Cpu::Cr3::write(Cpu::Cr3::Pdb::masked((addr_t)core_pd->table_base));
 
 	addr_t const stack_base = reinterpret_cast<addr_t>(&__bootstrap_stack);

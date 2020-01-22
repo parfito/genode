@@ -858,7 +858,7 @@ void Interface::handle_link_state()
 	try {
 		attach_to_domain_finish();
 
-		/* if the wholde domain became down, discard IP config */
+		/* if the whole domain is down, discard IP config */
 		Domain &domain_ = domain();
 		if (!link_state() && domain_.ip_config().valid) {
 			domain_.interfaces().for_each([&] (Interface &interface) {
@@ -870,6 +870,10 @@ void Interface::handle_link_state()
 	}
 	catch (Domain::Ip_config_static) { }
 	catch (Keep_ip_config) { }
+
+	/* force report if configured */
+	try { _config().report().handle_link_state(); }
+	catch (Pointer<Report>::Invalid) { }
 }
 
 
@@ -1148,8 +1152,11 @@ void Interface::_handle_ip(Ethernet_frame          &eth,
 					    l3_protocol_name(prot), " ", rule);
 				}
 				Domain &remote_domain = rule.domain();
-				_adapt_eth(eth, rule.to(), pkt, remote_domain);
-				ip.dst(rule.to());
+				_adapt_eth(eth, rule.to_ip(), pkt, remote_domain);
+				ip.dst(rule.to_ip());
+				if (!(rule.to_port() == Port(0))) {
+					_dst_port(prot, prot_base, rule.to_port());
+				}
 				_nat_link_and_pass(eth, size_guard, ip, prot, prot_base,
 				                   prot_size, local_id, local_domain, remote_domain);
 				return;
@@ -1704,9 +1711,31 @@ void Interface::_update_udp_tcp_links(L3_protocol  prot,
 					find_by_port(link.client().dst_port());
 
 			/* if destination IP of forwarding changed, dismiss link */
-			if (rule.to() != link.server().src_ip()) {
+			if (rule.to_ip() != link.server().src_ip()) {
 				_dismiss_link_log(link, "other forward-rule to");
 				throw Dismiss_link();
+			}
+			/*
+			 * If destination port of forwarding was set and then was
+			 * modified or unset, dismiss link
+			 */
+			if (!(link.server().src_port() == link.client().dst_port())) {
+				if (!(rule.to_port() == link.server().src_port())) {
+					_dismiss_link_log(link, "other forward-rule to_port");
+					throw Dismiss_link();
+				}
+			}
+			/*
+			 * If destination port of forwarding was not set and then was
+			 * set, dismiss link
+			 */
+			else {
+				if (!(rule.to_port() == link.server().src_port()) &&
+				    !(rule.to_port() == Port(0)))
+				{
+					_dismiss_link_log(link, "new forward-rule to_port");
+					throw Dismiss_link();
+				}
 			}
 			_update_link_check_nat(link, rule.domain(), prot, cln_dom);
 			return;
@@ -1931,6 +1960,7 @@ void Interface::handle_config_3()
 		/* if the IP configs differ, detach completely from the IP config */
 		if (old_domain.ip_config() != new_domain.ip_config()) {
 			detach_from_ip_config();
+			attach_to_domain_finish();
 			return;
 		}
 		/* if there was/is no IP config, there is nothing more to update */
@@ -1991,21 +2021,28 @@ Interface::~Interface()
 
 void Interface::report(Genode::Xml_generator &xml)
 {
-	bool const stats = _config().report().stats();
-	if (stats) {
-		xml.node("interface",  [&] () {
-			bool empty = true;
-			xml.attribute("label", _policy.label());
-			try { _policy.report(xml); empty = false; } catch (Report::Empty) { }
+	xml.node("interface",  [&] () {
+		bool empty { true };
+		xml.attribute("label", _policy.label());
+		if (_config().report().link_state()) {
+			xml.attribute("link_state", link_state());
+			empty = false;
+		}
+		if (_config().report().stats()) {
+			try {
+				_policy.report(xml);
+				empty = false;
+			}
+			catch (Report::Empty) { }
 
 			try { xml.node("tcp-links",        [&] () { _tcp_stats.report(xml);  }); empty = false; } catch (Report::Empty) { }
 			try { xml.node("udp-links",        [&] () { _udp_stats.report(xml);  }); empty = false; } catch (Report::Empty) { }
 			try { xml.node("icmp-links",       [&] () { _icmp_stats.report(xml); }); empty = false; } catch (Report::Empty) { }
 			try { xml.node("arp-waiters",      [&] () { _arp_stats.report(xml);  }); empty = false; } catch (Report::Empty) { }
 			try { xml.node("dhcp-allocations", [&] () { _dhcp_stats.report(xml); }); empty = false; } catch (Report::Empty) { }
-			if (empty) { throw Report::Empty(); }
-		});
-	}
+		}
+		if (empty) { throw Report::Empty(); }
+	});
 }
 
 
