@@ -27,7 +27,7 @@ CC_OPT          += -pipe \
                    -fno-asynchronous-unwind-tables -std=gnu++0x -mgeneral-regs-only
 # kernel memory: 28M minimum dynamic or 10 pro mill of the system memory
 CC_OPT          += -DCONFIG_MEMORY_DYN_MIN=0x1c00000 \
-                   -DCONFIG_MEMORY_DYN_PER_MILL=10
+                   -DCONFIG_MEMORY_DYN_PER_MILL=200
 CC_OPT_PIC      :=
 ifeq ($(filter-out $(SPECS),32bit),)
 override CC_MARCH = -m32
@@ -37,7 +37,7 @@ else
 ifeq ($(filter-out $(SPECS),64bit),)
 override CC_MARCH = -m64
 CC_WARN         += -Wframe-larger-than=256
-CC_OPT          += -mpreferred-stack-boundary=4 -mcmodel=kernel -mno-red-zone
+CC_OPT          += -mpreferred-stack-boundary=4 -mcmodel=large -mno-red-zone
 else
 $(error Unsupported environment)
 endif

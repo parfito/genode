@@ -67,6 +67,28 @@ namespace Nova {
 	};
 
 	/**
+         * Debug call bits, debug() argument must never be 0, this would break the system
+         * log("Preparing I/O mem ", Hex_range<addr_t>(base, size), " pe_log ",
+         * (Nova::CMD_LOG<<Nova::CMD_SHIFT) | (Nova::SCOPE_SYSTEM<<Nova::SCOPE_SHIFT) |
+         * (Nova::STATE_ON<<Nova::STATE_SHIFT));
+         * Nova::debug((Nova::CMD_LOG<<Nova::CMD_SHIFT) | (Nova::SCOPE_SYSTEM<<Nova::SCOPE_SHIFT) |
+         * (Nova::STATE_ON<<Nova::STATE_SHIFT));
+         */
+        enum Debug {
+            CMD_SHIFT     = 0,
+            CMD_KILL      = 1,
+            CMD_LOG       = 2,
+            
+            SCOPE_SHIFT   = 2,
+            SCOPE_EC      = 0,
+            SCOPE_PD      = 1,
+            SCOPE_SYSTEM  = 2, 
+            
+            STATE_SHIFT   = 4,
+            STATE_OFF     = 0,
+            STATE_ON      = 1,
+        };
+	/**
 	 * NOVA status codes returned by system-calls
 	 */
 	enum Status

@@ -1041,14 +1041,28 @@ set include_list { }
 
 ##
 # Read and execute files specified as '--include' arguments
-#
+# variable use_uefi, fb_name, fb_caps and fb_quantum are respectively set to 0, fb_drv, 120 and 8 M, 
+# according to vesa frame_buffer default config. If we use uefi (by DISK=uefi), we change here these value 
+# according to fb_boot_drv. We assume here that the run script will be the last to be sourced (executed).
 # Out of convenience run modules may be included by using a relative path.
 #
+set use_uefi        0
+set fb_name         "fb_drv"
+set fb_caps         120
+set fb_quantum      "8M"
+                
 foreach include_name [get_cmd_arg --include ""] {
 	# first check if the include name is absolute
 	if {[string first "/" $include_name] == 0} {
 		puts "including $include_name"
 		lappend include_list $include_name
+		
+                if {$use_uefi} {
+                    set fb_name         "fb_boot_drv"
+                    set fb_caps         130
+                    set fb_quantum      "32M"
+                }
+                
 		source $include_name
 
 		continue
@@ -1065,6 +1079,10 @@ foreach include_name [get_cmd_arg --include ""] {
 		if {[file exists $include_file] == 1} {
 			puts "including $include_file"
 			lappend include_list $include_name
+                        if {$include_name == "image/uefi"} {
+                            set use_uefi 1
+                        }
+
 			source $include_file
 
 			set found 1

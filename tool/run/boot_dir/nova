@@ -63,7 +63,7 @@ proc run_boot_dir {binaries} {
 		#
 		# Compress Genode image, to be uncompressed by GRUB
 		#
-		exec gzip [run_dir]/boot/image.elf
+		exec gzip -k [run_dir]/boot/image.elf
 
 		set serial_bender_opt ""
 
