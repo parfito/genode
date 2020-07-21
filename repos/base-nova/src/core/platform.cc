@@ -228,10 +228,11 @@ static addr_t init_core_page_fault_handler(addr_t const core_pd_sel)
 	};
 
 	addr_t ec_sel = cap_map().insert(1);
-
+        char name[30] = "init_core_page_fault_handler";
+        
 	uint8_t ret = create_ec(ec_sel, core_pd_sel, boot_cpu(),
 	                        CORE_PAGER_UTCB_ADDR, core_pager_stack_top(),
-	                        EXC_BASE, GLOBAL);
+	                        EXC_BASE, GLOBAL, &name);
 	if (ret)
 		log(__func__, ": create_ec returned ", ret);
 

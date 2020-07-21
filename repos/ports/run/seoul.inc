@@ -11,8 +11,7 @@ set use_vfs_block [expr $use_block_ram || $use_genode_iso]
 
 create_boot_directory
 
-import_from_depot [depot_user]/src/[base_src] \
-                  [depot_user]/src/init \
+import_from_depot [depot_user]/src/init \
                   [depot_user]/src/nitpicker
 
 if {$use_fs_rump} {
@@ -61,6 +60,7 @@ source ${genode_dir}/repos/base/run/platform_drv.inc
 proc platform_drv_priority {} { return { priority="-1"} }
 
 set build_components {
+	core init timer
 	drivers/rtc
 	drivers/input
 	app/seoul
@@ -358,6 +358,8 @@ append_if $use_framebuffer config {
 			<service name="Platform"> <any-child/></service>
 			<any-service> <parent/> </any-service>
 		</route>}
+append_if [expr $use_framebuffer &&  [have_include "power_on/amt"]] config {
+		<config width="1366" height="768" depth="16" buffered="yes"/>}
 append_if [expr $use_framebuffer &&  [have_include "power_on/qemu"]] config {
 		<config width="1280" height="960" depth="32" buffered="yes"/>}
 append_if [expr $use_framebuffer && ![have_include "power_on/qemu"]] config {
@@ -531,6 +533,8 @@ install_config $config
 
 # generic modules
 set boot_modules {
+	core ld.lib.so init
+	timer
 	rtc_drv
 	seoul
 	vm_seoul.cfg

@@ -113,7 +113,7 @@ int Platform_thread::start(void *ip, void *sp)
 			[&]() {
 				return create_ec(_sel_ec(), _pd->pd_sel(), kernel_cpu_id,
 				                 utcb_addr, initial_sp, _sel_exc_base,
-				                 !worker());
+				                 !worker(), &_name);
 			});
 
 		if (res != Nova::NOVA_OK) {
@@ -174,7 +174,7 @@ int Platform_thread::start(void *ip, void *sp)
 	enum { THREAD_GLOBAL = true };
 	uint8_t res = create_ec(_sel_ec(), _pd->pd_sel(), kernel_cpu_id,
 	                        pd_utcb, 0, vcpu() ? _sel_exc_base : 0,
-	                        THREAD_GLOBAL);
+	                        THREAD_GLOBAL, &_name);
 	if (res != NOVA_OK) {
 		error("create_ec returned ", res);
 		return -7;
