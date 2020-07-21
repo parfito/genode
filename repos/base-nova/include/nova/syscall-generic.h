@@ -66,7 +66,7 @@ namespace Nova {
 		NOVA_PD_CTRL    = 0xf,
 	};
 
-	/**
+        /**
          * Debug call bits, debug() argument must never be 0, this would break the system
          * log("Preparing I/O mem ", Hex_range<addr_t>(base, size), " pe_log ",
          * (Nova::CMD_LOG<<Nova::CMD_SHIFT) | (Nova::SCOPE_SYSTEM<<Nova::SCOPE_SHIFT) |
