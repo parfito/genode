@@ -333,7 +333,7 @@ append_if [expr $use_usb] config {
 		</route>
 	</start>
 
-	<start name="usb_drv" priority="-1" caps="120">
+	<start name="usb_drv" priority="-1" caps="200">
 		<resource name="RAM" quantum="20M"/>
 		<provides>
 			<service name="Input"/>
@@ -351,7 +351,7 @@ append_if [expr $use_usb] config {
 append_if [have_spec framebuffer] config {
 	<start name="fb_drv" priority="-1" caps="150">
 		<binary name="vesa_fb_drv"/>
-		<resource name="RAM" quantum="16M"/>
+		<resource name="RAM" quantum="32M"/>
 		<config/>
 	</start>}
 

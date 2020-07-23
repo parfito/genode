@@ -516,8 +516,6 @@ struct Ahci::Port : private Port_base
 
 		stop();
 
-		wait_for(hba.delayer(), Cmd::Cr::Equal(0));
-
 		init();
 
 		/*
@@ -694,8 +692,8 @@ struct Ahci::Port : private Port_base
 
 	void stop()
 	{
-		if (!(read<Ci>() | read<Sact>()))
-			write<Cmd::St>(0);
+		write<Cmd::St>(0);
+                wait_for(hba.delayer(), Cmd::Cr::Equal(0));
 	}
 
 	void power_up()
