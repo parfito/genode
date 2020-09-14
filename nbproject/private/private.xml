@@ -29,7 +29,6 @@
             <file>file:/home/parfait/git/genode20.05/repos/base/include/util/string.h</file>
             <file>file:/home/parfait/git/genode20.05/repos/base/mk/global.mk</file>
             <file>file:/home/parfait/git/genode20.05/repos/ports/run/seoul.inc</file>
-            <file>file:/home/parfait/git/genode20.05/build/x86_64/debug/ahci_drv.asm</file>
             <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/ec_exc.cpp</file>
             <file>file:/home/parfait/git/genode20.05/repos/base/mk/spec/64bit.mk</file>
             <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/vmx.cpp</file>
@@ -43,6 +42,7 @@
             <file>file:/home/parfait/git/genode20.05/build/x86_64/debug.sh</file>
             <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/lapic.cpp</file>
             <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/syscall.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/os/src/drivers/ahci/ahci.h</file>
             <file>file:/home/parfait/git/genode20.05/repos/base/include/util/reconstructible.h</file>
             <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/cpu.cpp</file>
             <file>file:/home/parfait/git/genode20.05/repos/os/run/vmm_x86.run</file>
