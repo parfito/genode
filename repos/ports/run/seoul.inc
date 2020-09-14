@@ -351,7 +351,7 @@ append_if [expr $use_nic_session && $use_nic_bridge] config {
 append_if $use_framebuffer config {
 	<start name="fb_drv" priority="-1" caps="130">
 		<binary name="vesa_fb_drv"/>
-		<resource name="RAM" quantum="16M"/>
+		<resource name="RAM" quantum="32M"/>
 		<route>
 			<service name="Timer">    <child name="timer"/></service>
 			<service name="Capture">  <child name="nitpicker"/></service>

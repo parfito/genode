@@ -250,9 +250,9 @@ struct Fadt : Genode::Mmio
 	Fadt(addr_t a) : Genode::Mmio(a)
 	{
 		features    = read<Fadt::Feature_flags>();
-		reset_type  = read<Fadt::Reset_reg_type>();
-		reset_addr  = read<Fadt::Reset_reg_addr>();
-		reset_value = read<Fadt::Reset_value>();
+//		reset_type  = read<Fadt::Reset_reg_type>();
+//		reset_addr  = read<Fadt::Reset_reg_addr>();
+//		reset_value = read<Fadt::Reset_value>();
 	}
 
 	struct Dsdt           : Register<0x28, 32> { };

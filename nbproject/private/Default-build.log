@@ -1,0 +1,799 @@
+including /home/parfait/git/genode20.05/tool/run/power_on/qemu
+including /home/parfait/git/genode20.05/tool/run/log/qemu
+including /home/parfait/git/genode20.05/tool/run/image/disk
+including /home/parfait/git/genode20.05/tool/run/boot_dir/nova
+including /home/parfait/git/genode20.05/tool/run/image/disk
+including /home/parfait/git/genode20.05/repos/ports/run/seoul-net.run
+building targets: drivers/rtc drivers/input app/seoul drivers/nic drivers/framebuffer drivers/platform server/report_rom drivers/acpi
+spawn make drivers/rtc drivers/input app/seoul drivers/nic drivers/framebuffer drivers/platform server/report_rom drivers/acpi
+make[1]: avertissement : jobserver n'est pas disponible : utilisation de -j1. Ajouter « + » à la règle parent du make.
+make[1] : on entre dans le répertoire « /home/parfait/git/genode20.05/build/x86_64 »
+checking library dependencies...
+Skip target drivers/framebuffer/imx8 because it requires [00;33marm_v8a[0m
+Skip target drivers/framebuffer/pl11x because it requires [00;33marm_v7[0m
+Skip target drivers/framebuffer/spec/imx53 because it requires [00;33marm_v7[0m
+Skip target drivers/framebuffer/spec/rpi because it requires [00;33marm_v6[0m
+Skip target drivers/framebuffer/spec/sdl because it requires [00;33mlinux sdl[0m
+Skip target drivers/input/spec/ps2/pl050 because it requires [00;33marm_v7[0m
+Skip target drivers/nic/fec/spec/arm_64 because it requires [00;33marm_64[0m
+Skip target drivers/nic/fec/spec/arm_v7 because it requires [00;33marm_v7[0m
+Skip target drivers/nic/lan9118 because it requires [00;33marm_v7[0m
+Skip target drivers/nic/spec/linux because it requires [00;33mlinux[0m
+Skip target drivers/nic/spec/zynq because it requires [00;33marm_v7[0m
+Skip target drivers/platform/spec/arm because it requires [00;33marm[0m
+Skip target drivers/platform/spec/imx53 because it requires [00;33marm_v7[0m
+Skip target drivers/platform/spec/rpi because it requires [00;33marm_v6[0m
+Skip target drivers/rtc/spec/linux because it requires [00;33mlinux[0m
+[00;33m  Library [0mldso_so_support
+[00;33m  Library [0mlx_kit_setjmp
+    COMPILE  so_support.o
+[00;33m  Library [0mblit
+    COMPILE  blit.o
+    COMPILE  setjmp.o
+[00;33m  Library [0mdde_ipxe_nic
+[00;33m  Library [0mseoul_libc_support
+    MERGE    lx_kit_setjmp.lib.a
+[00;33m  Library [0mx86emu
+    COMPILE  decode.o
+    MERGE    ldso_so_support.lib.a
+    COMPILE  arch/x86/core/x86_string.o
+    COMPILE  arch/i386/core/rdtsc_timer.o
+    COMPILE  gen/errno.o
+    COMPILE  fpu.o
+    MERGE    blit.lib.a
+[00;33m  Library [0mld
+    CONVERT  ld.symbols.s
+    COMPILE  locale/none.o
+    COMPILE  locale/table.o
+    ASSEMBLE ld.symbols.o
+    COMPILE  core/bitops.o
+    COMPILE  ops.o
+    COMPILE  core/iobuf.o
+    MERGE    ld.abi.so
+    COMPILE  stdlib/strtoul.o
+    COMPILE  string/memcmp.o
+[00;33m  Library [0mbase
+    MERGE    base.lib.a
+    COMPILE  string/strchr.o
+[01;33m  Program [0mdrivers/acpi/spec/x86/acpi_drv
+    COMPILE  acpi.o
+    COMPILE  main.o
+    COMPILE  core/list.o
+[01;33m  Program [0mdrivers/framebuffer/boot/fb_boot_drv
+    COMPILE  string/strcmp.o
+    COMPILE  main.o
+[01;33m  Program [0mdrivers/input/dummy/dummy_input_drv
+    COMPILE  string/strcpy.o
+    COMPILE  main.o
+    COMPILE  core/random.o
+    COMPILE  string/strcspn.o
+    COMPILE  core/string.o
+    COMPILE  string/strlen.o
+    COMPILE  string/strncpy.o
+    COMPILE  dde.o
+    COMPILE  string/strnlen.o
+    COMPILE  string/strspn.o
+    COMPILE  dde_support.o
+    COMPILE  string/strstr.o
+    COMPILE  sys/__error.o
+    COMPILE  smbios_table_reporter.o
+    MERGE    seoul_libc_support.lib.a
+[01;33m  Program [0mdrivers/input/spec/ps2/x86/ps2_drv
+    COMPILE  main.o
+    COMPILE  ops2.o
+    COMPILE  prim_ops.o
+    LINK     dummy_input_drv
+    COMPILE  drivers/bitbash/bitbash.o
+    COMPILE  sys.o
+[00;33m  Library [0mzircon
+    COMPILE  debug.o
+    MERGE    x86emu.lib.a
+[01;33m  Program [0mdrivers/platform/spec/x86/platform_drv
+    COMPILE  device_pd.o
+    COMPILE  device.o
+    COMPILE  drivers/bitbash/spi_bit.o
+    COMPILE  io_port.o
+    COMPILE  drivers/bus/pciextra.o
+    COMPILE  drivers/net/eepro100.o
+    LINK     fb_boot_drv
+    COMPILE  drivers/net/intel.o
+    COMPILE  drivers/net/mii.o
+[01;33m  Program [0mdrivers/rtc/spec/x86/rtc_drv
+    COMPILE  main.o
+    COMPILE  rtc.o
+    COMPILE  irq.o
+    COMPILE  drivers/net/realtek.o
+    COMPILE  irq.o
+    COMPILE  drivers/net/tg3/tg3.o
+    LINK     acpi_drv
+    COMPILE  drivers/net/tg3/tg3_hw.o
+    COMPILE  drivers/net/tg3/tg3_phy.o
+    COMPILE  main.o
+[00;33m  Library [0mintel_fb_include
+    MERGE    intel_fb_include.lib.a
+    COMPILE  libc.o
+    COMPILE  drivers/nvs/nvs.o
+[01;33m  Program [0mserver/report_rom/report_rom
+    COMPILE  main.o
+    COMPILE  drivers/nvs/threewire.o
+    COMPILE  nonpci_devices.o
+    COMPILE  dummies.o
+    COMPILE  net/eth_slow.o
+    COMPILE  net/ethernet.o
+    COMPILE  mutex.o
+In file included from /home/parfait/git/genode20.05/contrib/dde_ipxe-b68f4e4dffa6e653b3025fc341c1796cdf90e5d4/src/lib/dde_ipxe/src/net/ethernet.c:23:
+/home/parfait/git/genode20.05/contrib/dde_ipxe-b68f4e4dffa6e653b3025fc341c1796cdf90e5d4/src/lib/dde_ipxe/src/net/ethernet.c: Dans la fonction «eth_ntoa»:
+/home/parfait/git/genode20.05/contrib/dde_ipxe-b68f4e4dffa6e653b3025fc341c1796cdf90e5d4/src/lib/dde_ipxe/src/include/stdio.h:37:2: warning: la limite spécifiée 18446744073709551615 excède la taille maximale de l'objet (9223372036854775807) [-Wformat-truncation=]
+  snprintf ( (buf), ~( ( size_t ) 0 ), (fmt), ## __VA_ARGS__ )
+  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/parfait/git/genode20.05/contrib/dde_ipxe-b68f4e4dffa6e653b3025fc341c1796cdf90e5d4/src/lib/dde_ipxe/src/net/ethernet.c:125:2: note: dans l'expansion de la macro «sprintf»
+  sprintf ( buf, "%02x:%02x:%02x:%02x:%02x:%02x",
+  ^~~~~~~
+    COMPILE  net/iobpad.o
+    COMPILE  pci_device.o
+    COMPILE  printf.o
+    COMPILE  net/netdevice.o
+    COMPILE  stdio.o
+    COMPILE  syscalls.o
+    COMPILE  net/nullnet.o
+    COMPILE  nic.o
+    COMPILE  threads.o
+    MERGE    dde_ipxe_nic.lib.a
+    COMPILE  session.o
+    MERGE    zircon.lib.so
+    LINK     ps2_drv
+[01;33m  Program [0mapp/seoul/seoul
+    CONVERT  binary_mono.tff.o
+    COMPILE  component.o
+    COMPILE  console.o
+    COMPILE  device_model_registry.o
+    COMPILE  disk.o
+    LINK     rtc_drv
+[00;33m  Library [0mintel_fb_drv
+    COMPILE  backend.o
+    COMPILE  div64.o
+    COMPILE  dma-fence-array.o
+    COMPILE  dma-fence.o
+    LINK     report_rom
+    COMPILE  executor/halifax.o
+    COMPILE  drm_atomic.o
+[01;33m  Program [0mdrivers/framebuffer/vesa/vesa_fb_drv
+    COMPILE  framebuffer.o
+    COMPILE  drm_atomic_helper.o
+    COMPILE  executor/vbios_disk.o
+    COMPILE  drm_blend.o
+    COMPILE  drm_bridge.o
+    COMPILE  drm_cache.o
+    COMPILE  drm_connector.o
+    COMPILE  drm_color_mgmt.o
+    COMPILE  executor/vbios_keyboard.o
+    COMPILE  hw_emul.o
+    COMPILE  drm_crtc.o
+    COMPILE  executor/vbios_mem.o
+    COMPILE  executor/vbios_multiboot.o
+    COMPILE  drm_crtc_helper.o
+    COMPILE  ifx86emu.o
+[01;33m  Program [0mdrivers/input/zx_pc_ps2/zx_pc_ps2_drv
+    COMPILE  i8042.o
+    COMPILE  main.o
+    COMPILE  drm_dp_dual_mode_helper.o
+    COMPILE  drm_dp_helper.o
+    COMPILE  drm_dp_mst_topology.o
+    LINK     platform_drv
+[01;33m  Program [0mdrivers/nic/ipxe_nic_drv
+    COMPILE  executor/vbios_reset.o
+    COMPILE  main.o
+    COMPILE  main.o
+    COMPILE  drm_edid.o
+    COMPILE  executor/vbios_time.o
+    COMPILE  keyboard.o
+    COMPILE  model/acpicontroller.o
+    COMPILE  model/ahcicontroller.o
+    COMPILE  model/directio.o
+    COMPILE  model/directmem.o
+    COMPILE  model/idecontroller.o
+    COMPILE  model/intel82576vf.o
+    COMPILE  drm_encoder.o
+    COMPILE  model/ioapic.o
+    COMPILE  model/irqrouting.o
+    COMPILE  drm_fourcc.o
+    COMPILE  drm_framebuffer.o
+    COMPILE  drm_gem.o
+    COMPILE  model/keyboardcontroller.o
+    COMPILE  model/lapic.o
+    COMPILE  model/memorycontroller.o
+    COMPILE  drm_irq.o
+    COMPILE  drm_mm.o
+    COMPILE  model/msi.o
+    COMPILE  model/nullio.o
+    COMPILE  model/nullmem.o
+    COMPILE  model/pcidirect.o
+    COMPILE  model/pcihostbridge.o
+    COMPILE  model/pic8259.o
+    COMPILE  drm_mode_config.o
+    LINK     ipxe_nic_drv
+    LINK     vesa_fb_drv
+    COMPILE  drm_mode_object.o
+    COMPILE  model/pit8254.o
+    COMPILE  model/pmtimer.o
+    COMPILE  model/ps2keyboard.o
+    COMPILE  drm_modes.o
+    COMPILE  model/ps2mouse.o
+    COMPILE  model/rtc146818.o
+    COMPILE  model/rtl8029.o
+    COMPILE  model/satadrive.o
+    COMPILE  drm_modeset_helper.o
+    COMPILE  drm_modeset_lock.o
+    COMPILE  model/serial16550.o
+    COMPILE  drm_plane.o
+    COMPILE  model/sink.o
+    COMPILE  drm_plane_helper.o
+    COMPILE  model/sysctrlport.o
+    LINK     zx_pc_ps2_drv
+    COMPILE  model/vbios.o
+    COMPILE  model/vcpu.o
+    COMPILE  model/vga.o
+    COMPILE  network.o
+    COMPILE  state.o
+    COMPILE  drm_probe_helper.o
+    COMPILE  drm_property.o
+    COMPILE  user_env.o
+    COMPILE  drm_rect.o
+    COMPILE  drm_vblank.o
+    COMPILE  early-quirks.o
+    COMPILE  drm_vma_manager.o
+    COMPILE  generic.o
+    COMPILE  hdmi.o
+    COMPILE  i2c-algo-bit.o
+    COMPILE  i2c-boardinfo.o
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/video/hdmi.c: Dans la fonction «hdmi_spd_infoframe_init»:
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/video/hdmi.c:171:2: warning: la limite spécifiée par «strncpy» (8) est égale à la taille de la destination [-Wstringop-truncation]
+  strncpy(frame->vendor, vendor, sizeof(frame->vendor));
+  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/video/hdmi.c:172:2: warning: la limite spécifiée par «strncpy» (16) est égale à la taille de la destination [-Wstringop-truncation]
+  strncpy(frame->product, product, sizeof(frame->product));
+  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    COMPILE  i2c-core-base.o
+    COMPILE  i2c-core-smbus.o
+    COMPILE  i915_drv.o
+    COMPILE  i915_gem.o
+    COMPILE  i915_gem_clflush.o
+    COMPILE  i915_gem_context.o
+    COMPILE  i915_gem_fence_reg.o
+    COMPILE  i915_gem_gtt.o
+    COMPILE  i915_gem_internal.o
+    COMPILE  i915_gem_render_state.o
+    COMPILE  i915_gem_request.o
+    COMPILE  i915_gem_stolen.o
+    COMPILE  i915_gem_tiling.o
+    COMPILE  i915_gem_timeline.o
+    COMPILE  i915_irq.o
+    COMPILE  i915_vgpu.o
+    COMPILE  i915_pci.o
+    COMPILE  i915_vma.o
+    COMPILE  idr.o
+    COMPILE  intel-gtt.o
+    COMPILE  intel_atomic.o
+    LINK     seoul
+    COMPILE  intel_atomic_plane.o
+    COMPILE  intel_bios.o
+    COMPILE  intel_cdclk.o
+    COMPILE  intel_color.o
+    COMPILE  intel_crt.o
+    COMPILE  intel_ddi.o
+    COMPILE  intel_device_info.o
+    COMPILE  intel_display.o
+    COMPILE  intel_dp.o
+    COMPILE  intel_dp_aux_backlight.o
+    COMPILE  intel_dp_link_training.o
+    COMPILE  intel_dp_mst.o
+    COMPILE  intel_dpio_phy.o
+    COMPILE  intel_dpll_mgr.o
+    COMPILE  intel_dsi_pll.o
+    COMPILE  intel_fbc.o
+    COMPILE  intel_fifo_underrun.o
+    COMPILE  intel_frontbuffer.o
+    COMPILE  intel_guc.o
+    COMPILE  intel_guc_fw.o
+    COMPILE  intel_hdmi.o
+    COMPILE  intel_hotplug.o
+    COMPILE  intel_huc.o
+    COMPILE  intel_i2c.o
+    COMPILE  intel_lspcon.o
+    COMPILE  intel_lvds.o
+    COMPILE  intel_mocs.o
+    COMPILE  intel_modes.o
+In file included from /home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/include/drm/drm_mm.h:49,
+                 from /home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/include/drm/drmP.h:73,
+                 from /home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/include/drm/drm_modeset_helper.h:26,
+                 from /home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/include/drm/drm_atomic_helper.h:33,
+                 from /home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/gpu/drm/i915/intel_lspcon.c:26:
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/gpu/drm/i915/intel_lspcon.c: Dans la fonction «lspcon_resume_in_pcon_wa»:
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/drivers/gpu/drm/i915/intel_lspcon.c:175:18: warning: format «%u» attend un argument de type «unsigned int» mais l'argument 4 a le type «genode_uint64_t» {alias «long long unsigned int»} [-Wformat=]
+    DRM_DEBUG_KMS("LSPCON recovering in PCON mode after %u ms\n",
+                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+           jiffies_to_msecs(jiffies - start));
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/parfait/git/genode20.05/contrib/dde_linux-173719007927a108a9558e727b8c9b388f3159a2/src/drivers/framebuffer/intel/include/drm/drm_print.h:293:37: note: dans la définition de la macro «DRM_DEBUG_KMS»
+  drm_printk(KERN_DEBUG, DRM_UT_KMS, fmt, ##__VA_ARGS__)
+                                     ^~~
+    COMPILE  intel_opregion.o
+    COMPILE  intel_overlay.o
+    COMPILE  intel_panel.o
+    COMPILE  intel_pm.o
+    COMPILE  intel_psr.o
+    COMPILE  intel_renderstate_gen6.o
+    COMPILE  intel_renderstate_gen7.o
+    COMPILE  intel_renderstate_gen8.o
+    COMPILE  intel_renderstate_gen9.o
+    COMPILE  intel_runtime_pm.o
+    COMPILE  intel_sdvo.o
+    COMPILE  intel_sideband.o
+    COMPILE  intel_sprite.o
+    COMPILE  intel_uc.o
+    COMPILE  intel_uc_fw.o
+    COMPILE  intel_uncore.o
+    COMPILE  list_sort.o
+    COMPILE  radix-tree.o
+    COMPILE  llist.o
+    COMPILE  rbtree.o
+    COMPILE  scatterlist.o
+    MERGE    intel_fb_drv.lib.a
+[01;33m  Program [0mdrivers/framebuffer/intel/intel_fb_drv
+    COMPILE  dummies.o
+    COMPILE  env.o
+    COMPILE  i915_params.o
+    COMPILE  irq.o
+    COMPILE  lx_emul.o
+    COMPILE  lx_emul_c.o
+    COMPILE  malloc.o
+    COMPILE  main.o
+    COMPILE  mapped_io_mem_range.o
+    COMPILE  pci.o
+    COMPILE  printf.o
+    COMPILE  scheduler.o
+    COMPILE  timer.o
+    COMPILE  work.o
+    LINK     intel_fb_drv
+make[1] : on quitte le répertoire « /home/parfait/git/genode20.05/build/x86_64 »
+genode build completed
+checking configuration syntax
+  CHECK init
+using 'core-nova.o' as 'core.o'
+Created image file var/run/seoul-net.img (67404kiB)
+spawn qemu-system-x86_64 -enable-kvm -display sdl -cpu host -cpu phenom -net nic,model=e1000 -serial mon:stdio -m 512 -drive format=raw,file=var/run/seoul-net.img -machine q35
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:EDX.mmxext [bit 22]
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:EDX.fxsr-opt [bit 25]
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:EDX.3dnowext [bit 30]
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:EDX.3dnow [bit 31]
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:ECX.sse4a [bit 6]
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.8000000AH:EDX.npt [bit 0]
+qemu-system-x86_64: warning: hub 0 is not connected to host network
+Bender: Hello World.
+
+NOVA Microhypervisor v8-de795b1 (x86_64): Jul 21 2020 18:49:09 [gcc 8.3.0] [MBI2]
+
+
+
+[ 0] TSC:2114760 kHz BUS:1001234 kHz (measured)
+
+[ 0] CORE:0:0:0 10:2:3:0 [1] AMD Phenom(tm) 9550 Quad-Core Processor
+
+
+
+Hypervisor NOVA (API v8)[0m
+
+core     image  [0000000000100000,0000000000e31000)[0m
+
+binaries region [00000000002a3000,0000000000e31000) free for reuse[0m
+
+detected physical memory: 0x0000000000000000 - size: 0x000000000009fc00[0m
+
+use      physical memory: 0x0000000000000000 - size: 0x000000000009f000[0m
+
+detected physical memory: 0x0000000000100000 - size: 0x000000001fedf000[0m
+
+use      physical memory: 0x0000000000100000 - size: 0x000000001fedf000[0m
+
+reserved memory: 0x1f2ac000 - size: 0xd322f0 type=-2[0m
+
+reserved memory: 0x9fc00 - size: 0x400 type=2[0m
+
+reserved memory: 0xf0000 - size: 0x10000 type=2[0m
+
+reserved memory: 0x1ffdf000 - size: 0x21000 type=2[0m
+
+reserved memory: 0xb0000000 - size: 0x10000000 type=2[0m
+
+reserved memory: 0xfed1c000 - size: 0x4000 type=2[0m
+
+reserved memory: 0xfeffc000 - size: 0x4000 type=2[0m
+
+reserved memory: 0xfffc0000 - size: 0x40000 type=2[0m
+
+reserved memory: 0xfd000000 - size: 0x12c000 type=-5[0m
+
+reserved memory: 0x1000000 - size: 0x800000 type=-1[0m
+
+reserved memory: 0x1800000 - size: 0x1c00000 type=-1[0m
+
+reserved memory: 0x1ffe20d2 - size: 0x0 type=-3[0m
+
+Hypervisor reports 1x1 CPU [0m
+
+[34mWarning: CPU has no invariant TSC.[0m
+
+mapping: affinity space -> kernel cpu id - package:core:thread[0m
+
+ remap (0x0) -> 0 - 0:0:0) boot cpu[0m
+
+ROM modules:
+
+ ROM: [000000001fee9000,000000001ff10c20) acpi_drv
+
+ ROM: [000000001fd00000,000000001fec5cc0) bzImage-3.1
+
+ ROM: [000000001fb39000,000000001fb3a7af) config
+
+ ROM: [0000000000014000,0000000000018000) core_log
+
+ ROM: [000000001f4cb000,000000001f52a800) init
+
+ ROM: [000000001ff96000,000000001ff97cb6) init.xsd
+
+ ROM: [000000001ff11000,000000001ff66340) ipxe_nic_drv
+
+ ROM: [000000001fc01000,000000001fcff5a8) ld.lib.so
+
+ ROM: [000000001f472000,000000001f472934) munich
+
+ ROM: [000000001fa73000,000000001fae29f0) nitpicker
+
+ ROM: [000000001f473000,000000001f4caa18) platform_drv
+
+ ROM: [0000000000012000,0000000000013000) platform_info
+
+ ROM: [000000001ff98000,000000001ffbec38) pointer
+
+ ROM: [000000001ff67000,000000001ff95678) ps2_drv
+
+ ROM: [000000001f451000,000000001f471520) report_rom
+
+ ROM: [000000001fec6000,000000001fee8860) rtc_drv
+
+ ROM: [000000001fb3b000,000000001fc00b58) seoul
+
+ ROM: [000000001f52b000,000000001fa721e0) tc-net.gz
+
+ ROM: [000000001ffbf000,000000001ffdd390) timer
+
+ ROM: [000000001fae3000,000000001fb38510) vesa_fb_drv
+
+ ROM: [000000001f450000,000000001f4504d1) vm_seoul.cfg
+
+[0m
+
+36M kernel memory[0m
+
+[0m
+
+Genode 20.05-100-gde795b1a6[0m
+
+461 MiB RAM and 63253 caps assigned to init[0m
+
+[init] parent provides[0m[0m
+
+[init]   service "ROM"[0m[0m
+
+[init]   service "IRQ"[0m[0m
+
+[init]   service "IO_MEM"[0m[0m
+
+[init]   service "IO_PORT"[0m[0m
+
+[init]   service "PD"[0m[0m
+
+[init]   service "RM"[0m[0m
+
+[init]   service "CPU"[0m[0m
+
+[init]   service "VM"[0m[0m
+
+[init]   service "LOG"[0m[0m
+
+[init] child "timer"[0m[0m
+
+[init]   RAM quota:  776K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: timer[0m[0m
+
+[init]   priority:   0[0m[0m
+
+[init]   provides service Timer[0m[0m
+
+[init] child "rtc_drv"[0m[0m
+
+[init]   RAM quota:  776K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: rtc_drv[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init]   provides service Rtc[0m[0m
+
+[init] child "ps2_drv"[0m[0m
+
+[init]   RAM quota:  2824K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: ps2_drv[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init]   provides service Input[0m[0m
+
+[init] child "acpi_drv"[0m[0m
+
+[init]   RAM quota:  3848K[0m[0m
+
+[init]   cap quota:  316[0m[0m
+
+[init]   ELF binary: acpi_drv[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init] child "acpi_report_rom"[0m[0m
+
+[init]   RAM quota:  1800K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: report_rom[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init]   provides service ROM[0m[0m
+
+[init]   provides service Report[0m[0m
+
+[init] child "platform_drv"[0m[0m
+
+[init]   RAM quota:  3848K[0m[0m
+
+[init]   cap quota:  766[0m[0m
+
+[init]   ELF binary: platform_drv[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init]   provides service Platform[0m[0m
+
+[init]   provides service Acpi[0m[0m
+
+[init] child "nic_drv"[0m[0m
+
+[init]   RAM quota:  7944K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: ipxe_nic_drv[0m[0m
+
+[init]   priority:   2[0m[0m
+
+[init]   provides service Nic[0m[0m
+
+[init] child "fb_drv"[0m[0m
+
+[init]   RAM quota:  16136K[0m[0m
+
+[init]   cap quota:  96[0m[0m
+
+[init]   ELF binary: vesa_fb_drv[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init] child "seoul"[0m[0m
+
+[init]   RAM quota:  130824K[0m[0m
+
+[init]   cap quota:  766[0m[0m
+
+[init]   ELF binary: seoul[0m[0m
+
+[init]   priority:   3[0m[0m
+
+[init] child "nitpicker"[0m[0m
+
+[init]   RAM quota:  7944K[0m[0m
+
+[init]   cap quota:  86[0m[0m
+
+[init]   ELF binary: nitpicker[0m[0m
+
+[init]   priority:   1[0m[0m
+
+[init]   provides service Gui[0m[0m
+
+[init]   provides service Capture[0m[0m
+
+[init] child "pointer"[0m[0m
+
+[init]   RAM quota:  1800K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: pointer[0m[0m
+
+[init]   priority:   0[0m[0m
+
+[init] child "report_rom"[0m[0m
+
+[init]   RAM quota:  776K[0m[0m
+
+[init]   cap quota:  66[0m[0m
+
+[init]   ELF binary: report_rom[0m[0m
+
+[init]   priority:   0[0m[0m
+
+[init]   provides service Report[0m[0m
+
+[init]   provides service ROM[0m[0m
+
+[init] child "timer" announces service "Timer"[0m[0m
+
+[init] child "report_rom" announces service "Report"[0m[0m
+
+[init] child "report_rom" announces service "ROM"[0m[0m
+
+[init] child "nitpicker" announces service "Gui"[0m[0m
+
+[init] child "nitpicker" announces service "Capture"[0m[0m
+
+[init] child "acpi_report_rom" announces service "Report"[0m[0m
+
+[init] child "acpi_report_rom" announces service "ROM"[0m[0m
+
+[init -> acpi_drv] Found MADT[0m[0m
+
+[init -> acpi_drv] MADT IRQ 0 -> GSI 2 flags: 0[0m[0m
+
+[init -> acpi_drv] MADT IRQ 5 -> GSI 5 flags: 13[0m[0m
+
+[init -> acpi_drv] MADT IRQ 9 -> GSI 9 flags: 13[0m[0m
+
+[init -> acpi_drv] MADT IRQ 10 -> GSI 10 flags: 13[0m[0m
+
+[init -> acpi_drv] MADT IRQ 11 -> GSI 11 flags: 13[0m[0m
+
+[init -> acpi_drv] Found MCFG[0m[0m
+
+[init -> acpi_drv] MCFG BASE 0xb0000000 seg 0x0 bus 0x0-0xff[0m[0m
+
+[init -> acpi_drv] RSDT OEM 'BOCHS ', table id 'BXPCRSDT', revision 1, creator 'BXPC' (1)[0m[0m
+
+[init -> acpi_drv] SMBIOS table (entry point: 0x175950 structures: 0xf5970)[0m[0m
+
+[init -> platform_drv] ECAM/MMCONF range 00:00.0-ff:1f.7 - addr [00000000b0000000,00000000c0000000)[0m[0m
+
+[init -> platform_drv] Root bridge: 00:00.0[0m[0m
+
+[init] child "platform_drv" announces service "Platform"[0m[0m
+
+[init -> ps2_drv] Using keyboard with scan code set 1 (xlate)[0m[0m
+
+[init -> fb_drv] Found PCI VGA at 00:01.0[0m[0m
+
+[init -> fb_drv] fb mapped to 0x5000[0m[0m
+
+[init -> ps2_drv] detected ExPS/2 mouse - activating scroll-wheel and 5-button support[0m[0m
+
+[init -> platform_drv] PS2 uses IRQ, vector 0x1[0m[0m
+
+[init -> platform_drv] PS2 uses IRQ, vector 0xc[0m[0m
+
+[init] child "ps2_drv" announces service "Input"[0m[0m
+
+[init -> fb_drv] Found: VESA BIOS version 3.0[0m
+
+[init -> fb_drv] OEM: SeaBIOS VBE(C) 2011[0m[0m
+
+[init -> fb_drv] Found: physical frame buffer at 0xfd000000 size: 16777216[0m[0m
+
+[init -> fb_drv] fb mapped to 0xb000000[0m[0m
+
+[init -> fb_drv] using VESA mode 1280x960@32[0m[0m
+
+[init] child "rtc_drv" announces service "Rtc"[0m[0m
+
+[init -> nic_drv] --- iPXE NIC driver started ---[0m[0m
+
+[init -> nic_drv] -- init iPXE NIC[0m[0m
+
+[init -> nic_drv] [36mFound: 00:02.0 8086:100e (rev 03) IRQ 0b[0m[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> nic_drv] [36musing driver 82540em[0m[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> nic_drv] [36mPCI device 00:02.0 latency timer is unreasonably low at 0. Setting to 32.[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> nic_drv] [36mbus_addr = febc0000 len = 20000[0m[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> seoul] --- Seoul VMM starting ---[0m[0m
+
+[init -> seoul]  VMM memory 16M[0m[0m
+
+[init -> seoul]  using large memory attachments for guest VM.[0m[0m
+
+[init -> seoul]  framebuffer 1024x768[0m[0m
+
+[init -> nic_drv] [35msnprintf not implemented[0m[0m
+
+[init -> nic_drv] [0m[0m
+
+[init -> platform_drv] IRQ override 11->11, trigger mode: LEVEL, polarity: HIGH[0m[0m
+
+[init -> platform_drv] 00:02.0 uses IRQ, vector 0xb, supports: [0m[0m
+
+[init] child "nic_drv" announces service "Nic"[0m[0m
+
+[init -> seoul] [000000000c000000,0000000012f3f000) - 111 MiB - VMM accessible shadow mapping of VM memory[0m[0m
+
+[init -> seoul] [0000000001000000,00000000010d0824) - VMM program image[0m[0m
+
+[init -> seoul] [0m
+
+[init -> seoul] --- Setup VM ---[0m[0m
+
+[init -> seoul] VMM: physmem: 0 [0, 9a000][0m[0m
+
+[init -> seoul] VMM: physmem: 0 [100000, 6f3f000][0m[0m
+
+[init -> seoul] VMM: Got time 5aaf6835adc80[0m[0m
+
+[init -> seoul] VMM: VGA console 6f3f000+300000 b000000[0m[0m
+
+[init -> seoul] [31mError: VMM PANIC![0m[0m
+
+[init -> seoul] VMM: no VMX nor SVM virtualization support found[0m[0m
+
+: spawn id exp5 not open
+    while executing
+"expect {
+		-i $running_spawn_id $platform_msg { puts stderr "Error: platform rebooted unexpectedly"; exit -4 }
+		-i $running_spawn_id -re $wait_for_re..."
+    (procedure "wait_for_output" line 22)
+    invoked from within
+"wait_for_output $wait_for_re $timeout_value $qemu_spawn_id"
+    (procedure "run_log" line 28)
+    invoked from within
+"run_log $wait_for_re $timeout_value"
+    (procedure "run_genode_until" line 36)
+    invoked from within
+"run_genode_until forever"
+    (file "/home/parfait/git/genode20.05/repos/ports/run/seoul-net.run" line 62)
+    invoked from within
+"source $include_name"
+    ("foreach" body line 6)
+    invoked from within
+"foreach include_name [get_cmd_arg --include ""] {
+	# first check if the include name is absolute
+	if {[string first "/" $include_name] == 0} {
+		puts ..."
+    (file "/home/parfait/git/genode20.05/tool/run/run" line 1044)
+Makefile:332: recipe for target 'run/seoul-net' failed
+make: *** [run/seoul-net] Error 1

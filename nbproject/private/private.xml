@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project-private xmlns="http://www.netbeans.org/ns/project-private/1">
+    <code-assistance-data xmlns="http://www.netbeans.org/ns/make-project-private/1">
+        <code-model-enabled>true</code-model-enabled>
+    </code-assistance-data>
+    <data xmlns="http://www.netbeans.org/ns/make-project-private/1">
+        <activeConfTypeElem>0</activeConfTypeElem>
+        <activeConfIndexElem>0</activeConfIndexElem>
+    </data>
+    <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/2" lastBookmarkId="0"/>
+    <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
+        <group>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/ec_svm.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/virtualbox_auto.inc</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/ec.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base-nova/include/spec/64bit/nova/syscalls.h</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/vtlb.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/include/syscall.hpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/vbox5_ubuntu_16_04_64.run</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/pd.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/src/app/seoul/component.cc</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/entry.S</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/seoul-net.run</file>
+            <file>file:/home/parfait/git/genode20.05/repos/libports/src/drivers/framebuffer/vesa/main.cc</file>
+            <file>file:/home/parfait/git/genode20.05/tool/run/boot_dir/nova</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/regs.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/ec_vmx.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/vbox_win.inc</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base/include/util/string.h</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base/mk/global.mk</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/seoul.inc</file>
+            <file>file:/home/parfait/git/genode20.05/build/x86_64/debug/ahci_drv.asm</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/ec_exc.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base/mk/spec/64bit.mk</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/vmx.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/ports/run/vm_ubuntu_16_04_64.vbox</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/include/pd.hpp</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/console_serial.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/include/cpu.hpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/libports/src/drivers/framebuffer/vesa/include/vesa.h</file>
+            <file>file:/home/parfait/git/genode20.05/repos/os/src/drivers/acpi/acpi.cc</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/bootstrap.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/build/x86_64/debug.sh</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/lapic.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/syscall.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base/include/util/reconstructible.h</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/src/cpu.cpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/os/run/vmm_x86.run</file>
+            <file>file:/home/parfait/git/genode20.05/repos/base/include/base/connection.h</file>
+            <file>file:/home/parfait/git/genode20.05/contrib/nova-e1ea2d79b890ec24b65effb5b9718019db97ec56/src/kernel/nova/include/ec.hpp</file>
+            <file>file:/home/parfait/git/genode20.05/repos/os/run/demo.run</file>
+            <file>file:/home/parfait/git/genode20.05/build/x86_64/etc/build.conf</file>
+            <file>file:/home/parfait/git/genode20.05/repos/os/src/drivers/ahci/main.cc</file>
+        </group>
+    </open-files>
+    <preferences xmlns="http://www.netbeans.org/ns/auxiliary-configuration-preferences/1">
+        <module name="org-netbeans-modules-cnd-discovery">
+            <property name="rootFolder" value="/home/parfait/git/genode20.05"/>
+            <property name="libraries" value=""/>
+            <property name="executable" value="/home/parfait/git/genode20.05"/>
+            <property name="exec-log-file" value="/home/parfait/git/genode20.05"/>
+            <property name="folder" value="/home/parfait/git/genode20.05/build/x86_64*/home/parfait/git/genode20.05"/>
+        </module>
+    </preferences>
+</project-private>

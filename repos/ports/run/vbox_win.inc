@@ -124,7 +124,7 @@ append config_of_app {
 	</start>
 
 	<start name="nitpicker" priority="-1" caps="150">
-		<resource name="RAM" quantum="12M"/>
+		<resource name="RAM" quantum="24M"/>
 		<provides> <service name="Gui"/> <service name="Capture"/> </provides>
 		<route>
 			<service name="Input"> <child name="input_filter" /> </service>

@@ -9,8 +9,8 @@
   <Machine uuid="{37ab43a5-38d8-4491-93f5-5b0b077f5c32}" name="ubuntu_16_04_64" OSType="Ubuntu_64" snapshotFolder="Snapshots" lastStateChange="2014-11-14T11:58:35Z">
     <MediaRegistry>
       <HardDisks>
-        <HardDisk uuid="{2a248ff9-7ac9-4862-98f9-14e31968f23d}" location="/ubuntu_16_04_64.vdi" format="VDI" type="Immutable">
-          <HardDisk uuid="{78a3a6a1-ade6-41bf-8b29-ec7cf16de4bb}" location="/ram/overlay_ubuntu_16_04_64.vdi" format="VDI" autoReset="true"/>
+        <HardDisk uuid="{f17f7c02-2bd1-44f6-acfe-31d9569b153b}" location="/ubuntu_16_04_64.vdi" format="VDI" type="Immutable">
+          <HardDisk uuid="{2b036ef1-29f6-4058-ad90-8148fd822612}" location="/ram/overlay_ubuntu_16_04_64.vdi" format="VDI" autoReset="true"/>
         </HardDisk>
       </HardDisks>
       <DVDImages/>
@@ -28,7 +28,7 @@
         <HardwareVirtExLargePages enabled="false"/>
         <HardwareVirtForce enabled="false"/>
       </CPU>
-      <Memory RAMSize="9216" PageFusion="false"/>
+      <Memory RAMSize="4096" PageFusion="false"/>
       <HID Pointing="USBTablet" Keyboard="PS2Keyboard"/>
       <HPET enabled="false"/>
       <Chipset type="PIIX3"/>
@@ -38,7 +38,7 @@
         <Order position="3" device="HardDisk"/>
         <Order position="4" device="None"/>
       </Boot>
-      <Display VRAMSize="20" monitorCount="1" accelerate3D="false" accelerate2DVideo="false"/>
+      <Display VRAMSize="128" monitorCount="1" accelerate3D="false" accelerate2DVideo="false"/>
       <VideoCapture enabled="false" screens="18446744073709551615" horzRes="1024" vertRes="768" rate="512" fps="25"/>
       <RemoteDisplay enabled="false" authType="Null"/>
       <BIOS>
@@ -90,7 +90,7 @@
     <StorageControllers>
       <StorageController name="SATA" type="AHCI" PortCount="2" useHostIOCache="true" Bootable="true">
         <AttachedDevice type="HardDisk" port="0" device="0">
-          <Image uuid="{78a3a6a1-ade6-41bf-8b29-ec7cf16de4bb}"/>
+          <Image uuid="{2b036ef1-29f6-4058-ad90-8148fd822612}"/>
         </AttachedDevice>
         <AttachedDevice passthrough="false" type="DVD" port="1" device="0"/>
       </StorageController>
