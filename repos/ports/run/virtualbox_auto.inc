@@ -21,8 +21,7 @@ if {[have_spec nova]} {
 
 create_boot_directory
 
-import_from_depot [depot_user]/src/[base_src] \
-                  [depot_user]/src/init \
+import_from_depot [depot_user]/src/init \
                   [depot_user]/src/nitpicker
 
 if {$use_vms > 1} {
@@ -30,6 +29,7 @@ if {$use_vms > 1} {
 }
 
 append build_components {
+        core init timer
 	server/part_block
 	server/fs_rom
 	drivers/ahci
@@ -380,6 +380,7 @@ append config {
 install_config $config
 
 append boot_modules {
+        core ld.lib.so init timer
 	part_block ahci_drv fs_rom vfs
 	libc.lib.so vfs.lib.so libm.lib.so
 	libc_pipe.lib.so

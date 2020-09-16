@@ -6,10 +6,11 @@
             <name>genode20.05</name>
             <c-extensions>c,i,m</c-extensions>
             <cpp-extensions>C,cc,cpp</cpp-extensions>
-            <header-extensions>S,c0,def,h,hex,hpp,in,inc,inl,l,lds,list,md,pro,tcc,uni,x,y</header-extensions>
+            <header-extensions>S,c0,def,h,hpp,in,inc,inl,l,lds,list,md,pro,rh,tcc,uni,x,y</header-extensions>
             <sourceEncoding>UTF-8</sourceEncoding>
             <make-dep-projects/>
             <sourceRootList>
+                <sourceRootElem>.</sourceRootElem>
                 <sourceRootElem>.</sourceRootElem>
             </sourceRootList>
             <confList>
