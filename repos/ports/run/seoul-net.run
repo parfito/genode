@@ -27,7 +27,7 @@ set use_framebuffer   1
 set use_fancy_stuff   0
 set use_top           0
 
-set memory_vmm_vm     "128M"
+set memory_vmm_vm     "256M"
 
 set vcpus_to_be_used  1
 
@@ -38,7 +38,7 @@ set multiboot_files {
 }
 
 set guest_os_binaries { munich bzImage-5.4.3 core.gz}
-set sha1_os_binaries  { 7ecb4ba634a0ecfa6429418ea73490d6f65afead 3133f5fc8a3d86bc11570959802e5ae63a7842dd 876610d6fd0ed335f57a886f596c221432c95320}
+set sha1_os_binaries  { 7ecb4ba634a0ecfa6429418ea73490d6f65afead ac87314765028c7816c642e252af36a433e3cd80 876610d6fd0ed335f57a886f596c221432c95320}
 
 #
 # Download demo kernel, image and

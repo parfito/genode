@@ -510,7 +510,7 @@ if {$use_fancy_stuff} {
 
 			<start name="seoul" priority="-1" caps="200">
 				<binary name="seoul"/>
-				<resource name="RAM" quantum="256M"/>
+				<resource name="RAM" quantum="384M"/>
 				<route>
 					<service name="Timer"><parent/></service>
 					<service name="Nic"><parent/></service>
