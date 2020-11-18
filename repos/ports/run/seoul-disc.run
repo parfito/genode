@@ -13,8 +13,8 @@ set use_model_ahci    1
 set use_model_ide     0
 
 set use_block_vdi     0
-set use_block_ram     1
-set use_block_sata    0
+set use_block_ram     0
+set use_block_sata    1
 
 set use_part_block    0
 
@@ -39,8 +39,8 @@ if {[have_include power_on/qemu]} {
 	}
 
 	append qemu_args " -m 1536 "
-	append qemu_args " -cpu phenom"
-	append_if $use_block_sata qemu_args " -drive id=disk,file=bin/seoul-disc.raw,format=raw,if=none -device ahci,id=ahci -device ide-drive,drive=disk,bus=ahci.0 -boot d"
+#	append qemu_args " -cpu phenom"
+	append_if $use_block_sata qemu_args " -drive id=disk,file=bin/seoul-disc.raw,format=raw,if=none -device ahci,id=ahci -device ide-drive,drive=disk,bus=ahci.3 -boot d"
 }
 
 source ${genode_dir}/repos/ports/run/seoul.inc

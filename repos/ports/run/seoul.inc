@@ -71,6 +71,7 @@ if {$use_fancy_stuff} { set use_framebuffer 1 }
 lappend_if $use_block_vdi       build_components server/vdi_block
 lappend_if $use_usb             build_components drivers/usb
 lappend_if $use_vfs_block       build_components server/vfs_block
+lappend_if $use_vfs_block       build_components lib/vfs/import
 lappend_if $use_drv_ahci        build_components drivers/ahci
 lappend_if $use_nic_session     build_components drivers/nic
 lappend_if $use_nic_bridge      build_components server/nic_bridge
@@ -223,16 +224,16 @@ append_if $use_drv_ahci config {
 		<config>}
 
 append_if [expr $use_block_sata && !$use_part_block] config {
-			<policy label="seoul -> VirtualDisk 0" device="0" writeable="yes"/>}
+			<policy label="seoul -> VirtualDisk 0" device="3" writeable="yes"/>}
 
 append_if [expr $use_block_vdi && !$use_part_block] config {
-			<policy label="rump_fs -> " device="0" writeable="yes"/>}
+			<policy label="rump_fs -> " device="3" writeable="yes"/>}
 
 append_if [expr $use_block_vdi && $use_part_block] config {
-			<policy label="part_block -> " device="0" writeable="yes"/>}
+			<policy label="part_block -> " device="3" writeable="yes"/>}
 
 append_if [expr $use_block_sata && $use_part_block] config {
-			<policy label="part_block -> " device="0" writeable="yes"/>}
+			<policy label="part_block -> " device="3" writeable="yes"/>}
 
 append_if $use_drv_ahci config {
 		</config>
@@ -545,6 +546,7 @@ lappend_if [expr !$use_usb]   boot_modules ps2_drv
 lappend_if $use_usb           boot_modules usb_drv
 lappend_if $use_vfs_block     boot_modules vfs_block
 lappend_if $use_vfs_block     boot_modules vfs.lib.so
+lappend_if $use_vfs_block     boot_modules vfs_import.lib.so
 lappend_if $use_drv_ahci      boot_modules ahci_drv
 lappend_if $use_nic_session   boot_modules ipxe_nic_drv
 lappend_if $use_nic_bridge    boot_modules nic_bridge
