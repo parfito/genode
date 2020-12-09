@@ -5,6 +5,10 @@
 # \author Alexander Boettcher
 # \date   2011-11-21
 
+set vesa_grangeville    1
+set vesa_qemu           0
+set vesa_amt            0
+ 
 set use_fs_rump $use_block_vdi
 set use_drv_ahci [expr $use_block_vdi || $use_block_sata]
 set use_vfs_block [expr $use_block_ram || $use_genode_iso]
@@ -359,9 +363,11 @@ append_if $use_framebuffer config {
 			<service name="Platform"> <any-child/></service>
 			<any-service> <parent/> </any-service>
 		</route>}
-append_if [expr $use_framebuffer &&  [have_include "power_on/amt"]] config {
+append_if [expr $use_framebuffer &&  $vesa_amt] config {
 		<config width="1366" height="768" depth="16" buffered="yes"/>}
-append_if [expr $use_framebuffer &&  [have_include "power_on/qemu"]] config {
+append_if [expr $use_framebuffer &&  $vesa_grangeville] config {
+		<config width="1280" height="1024" depth="32" buffered="yes"/>}
+append_if [expr $use_framebuffer &&  $vesa_qemu] config {
 		<config width="1280" height="960" depth="32" buffered="yes"/>}
 append_if [expr $use_framebuffer && ![have_include "power_on/qemu"]] config {
 		<config buffered="yes"/>}
